@@ -1,0 +1,48 @@
+module.exports = {
+    expo: {
+        name: "smartapps",
+        slug: "smartapps",
+        version: "1.0.0",
+        orientation: "portrait",
+        icon: "./assets/icon.png",
+        userInterfaceStyle: "light",
+        newArchEnabled: true,
+        splash: {
+            image: "./assets/splash-icon.png",
+            resizeMode: "contain",
+            backgroundColor: "#ffffff"
+        },
+        ios: {
+            supportsTablet: true
+        },
+        android: {
+            package: "com.okpanz.smartapps",
+            adaptiveIcon: {
+                foregroundImage: "./assets/adaptive-icon.png",
+                backgroundColor: "#ffffff"
+            },
+            edgeToEdgeEnabled: true,
+            predictiveBackGestureEnabled: false
+        },
+        web: {
+            favicon: "./assets/favicon.png"
+        },
+        plugins: [
+            "expo-router",
+            [
+                "expo-camera",
+                {
+                    "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera."
+                }
+            ]
+        ],
+        scheme: "smartverify",
+        extra: {
+            router: {},
+            eas: {
+                projectId: "14723b65-a37f-4e00-84bb-f6827a65c09c"
+            },
+            geminiApiKey: process.env.EXPO_PUBLIC_GEMINI_API_KEY
+        }
+    }
+};

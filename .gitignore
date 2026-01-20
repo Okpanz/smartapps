@@ -18,6 +18,11 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# environment variables
+.env
+.env.local
+.env.example
+
 # Metro
 .metro-health-check*
 
@@ -30,12 +35,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
-
 # typescript
 *.tsbuildinfo
 
+*.md 
 # generated native folders
 /ios
 /android
