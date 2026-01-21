@@ -1,6 +1,6 @@
-import { View, Text, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView, Alert, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,9 +10,10 @@ import { useState } from 'react';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { StepIndicator } from '../../components/ui/StepIndicator';
+import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import { verifyIdentifier } from '../../services/verification';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
+import { Ionicons } from '@expo/vector-icons';
 
 const identifierSchema = z.object({
     identifier: z.string()
@@ -28,10 +29,19 @@ export default function IdentifierScreen() {
     const setEmployee = useEnrollmentStore((state) => state.setEmployee);
     const resetEnrollment = useEnrollmentStore((state) => state.resetEnrollment);
     const [loading, setLoading] = useState(false);
+    const fadeAnim = useRef(new Animated.Value(0)).current;
 
     const { control, handleSubmit, formState: { errors } } = useForm<IdentifierForm>({
         resolver: zodResolver(identifierSchema),
     });
+
+    useEffect(() => {
+        Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+        }).start();
+    }, []);
 
     const onSubmit = async (data: IdentifierForm) => {
         setLoading(true);
@@ -50,19 +60,26 @@ export default function IdentifierScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <View className="pt-6 bg-background">
-                <StepIndicator currentStep={1} totalSteps={4} />
-            </View>
+            <EnhancedStepIndicator currentStep={1} totalSteps={5} />
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
             >
-                <ScrollView contentContainerStyle={{ padding: 24 }}>
-                    <Text className="text-2xl font-bold text-primary mb-2">Employee Identification</Text>
-                    <Text className="text-base text-gray-500 mb-8">
-                        Enter the unique identifier to verify the employee's eligibility for enrollment.
-                    </Text>
+                <Animated.ScrollView
+                    contentContainerStyle={{ padding: 24 }}
+                    style={{ opacity: fadeAnim }}
+                >
+                    {/* Header with Icon */}
+                    <View className="items-center mb-6">
+                        <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-4">
+                            <Ionicons name="card-outline" size={32} color="#10B981" />
+                        </View>
+                        <Text className="text-2xl font-bold text-primary mb-2 text-center">Employee Identification</Text>
+                        <Text className="text-base text-gray-500 text-center">
+                            Enter the unique identifier to verify the employee's eligibility for enrollment.
+                        </Text>
+                    </View>
 
                     <Card className="p-6">
                         <Input
@@ -83,7 +100,7 @@ export default function IdentifierScreen() {
                             variant="filled"
                         />
                     </Card>
-                </ScrollView>
+                </Animated.ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );

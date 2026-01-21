@@ -19,6 +19,7 @@ export default function DashboardScreen() {
 
     const stats = [
         { label: 'Total Enrolled', value: '1,284', change: '+12.5%' },
+        { label: 'Total Verified', value: '1,284', change: '+12.5%' },
         { label: 'This Month', value: '86', change: '+8%' },
         { label: 'Pending', value: '3', change: '0%' },
     ];
@@ -28,28 +29,30 @@ export default function DashboardScreen() {
     const quickActions = [
         {
             icon: <Ionicons name="person-add" size={24} color="#10B981" />,
-            title: 'New Enrollment',
+            title: 'New Verification',
             description: 'Add employee',
             route: '/enrollment/identifier',
-        },
-        {
-            icon: <MaterialIcons name="list-alt" size={24} color="#10B981" />,
-            title: 'View Records',
-            description: 'Browse all',
-            route: '/records',
-        },
-        {
-            icon: <MaterialIcons name="bar-chart" size={24} color="#10B981" />,
-            title: 'Reports',
-            description: 'View analytics',
-            route: '/reports',
         },
         {
             icon: <Ionicons name="settings" size={24} color="#10B981" />,
             title: 'Settings',
             description: 'Configure app',
-            route: '/settings',
+            route: '/(tabs)/settings',
         },
+        {
+            icon: <Ionicons name="time" size={24} color="#10B981" />,
+            title: 'Activity',
+            description: 'View history',
+            route: '/(tabs)/history',
+        },
+        {
+            icon: <Ionicons name="chatbubbles" size={24} color="#10B981" />,
+            title: 'AI Assistant',
+            description: 'Get help',
+            route: '/(tabs)/ai',
+        },
+
+
     ];
 
     return (
@@ -83,7 +86,7 @@ export default function DashboardScreen() {
                 <View className="px-6 py-6">
                     {/* Featured Action */}
                     <View className="mb-6">
-                        <Text className="text-lg font-bold text-gray-900 mb-4">Start Enrollment</Text>
+                        <Text className="text-lg font-bold text-gray-900 mb-4">Start Verification</Text>
                         <TouchableOpacity
                             onPress={() => router.push('/enrollment/identifier')}
                             activeOpacity={0.9}
@@ -94,7 +97,7 @@ export default function DashboardScreen() {
                                     <Ionicons name="person-add" size={24} color="#059669" />
                                 </View>
                                 <View className="flex-1">
-                                    <Text className="text-xl font-bold text-white mb-1">New Enrollment</Text>
+                                    <Text className="text-xl font-bold text-white mb-1">New Verification</Text>
                                     <Text className="text-sm text-green-100 font-medium">Ready to get started?</Text>
                                 </View>
                             </View>

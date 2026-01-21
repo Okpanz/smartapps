@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useState, useRef } from 'react';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
-import { StepIndicator } from '../../components/ui/StepIndicator';
+import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import React from 'react';
 
 export default function FaceCaptureScreen() {
@@ -35,9 +35,6 @@ export default function FaceCaptureScreen() {
             </View>
         );
     }
-
-    // Live face detection is not supported in recent Expo Camera versions without frame processors.
-    // We will validate the face AFTER capture.
 
     const handleDoubleTap = () => {
         const now = Date.now();
@@ -94,9 +91,7 @@ export default function FaceCaptureScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <View className="pt-6 bg-background">
-                <StepIndicator currentStep={3} totalSteps={4} />
-            </View>
+            <EnhancedStepIndicator currentStep={4} totalSteps={5} />
 
             <View className="flex-1 p-6">
                 <Text className="text-2xl font-bold text-primary mb-2 text-center">Facial Capture</Text>

@@ -1,19 +1,27 @@
-import { View, Text, ScrollView, SafeAreaView } from 'react-native';
+import { View, Text, ScrollView, SafeAreaView, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { StepIndicator } from '../../components/ui/StepIndicator';
-import { useEffect } from 'react';
+import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
+import { useEffect, useRef } from 'react';
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function EmployeeDetailsScreen() {
     const router = useRouter();
     const employee = useEnrollmentStore((state) => state.employee);
+    const fadeAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
         if (!employee) {
             router.replace('/enrollment/identifier');
+        } else {
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 600,
+                useNativeDriver: true,
+            }).start();
         }
     }, [employee]);
 
@@ -21,17 +29,24 @@ export default function EmployeeDetailsScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <View className="pt-6 bg-background">
-                <StepIndicator currentStep={2} totalSteps={4} />
-            </View>
+            <EnhancedStepIndicator currentStep={2} totalSteps={5} />
 
-            <ScrollView contentContainerStyle={{ padding: 24 }}>
-                <Text className="text-2xl font-bold text-primary mb-2">Confirm Details</Text>
-                <Text className="text-base text-gray-500 mb-8">
-                    Please verify the employee information below before proceeding to biometric capture.
-                </Text>
+            <Animated.ScrollView
+                contentContainerStyle={{ padding: 24 }}
+                style={{ opacity: fadeAnim }}
+            >
+                {/* Header with Icon */}
+                <View className="items-center mb-6">
+                    <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-4">
+                        <Ionicons name="document-text-outline" size={32} color="#10B981" />
+                    </View>
+                    <Text className="text-2xl font-bold text-primary mb-2 text-center">Confirm Details</Text>
+                    <Text className="text-base text-gray-500 text-center">
+                        Please verify the employee information below before proceeding to biometric capture.
+                    </Text>
+                </View>
 
-                <Card variant="outlined" className="p-6 mb-6 rounded-3xl bg-white border border-gray-100">
+                <Card variant="outlined" className="p-6 mb-6 rounded-3xl bg-white border border-gray-100 shadow-sm">
                     <DetailRow label="Full Name" value={`${employee.firstName} ${employee.lastName}`} />
                     <View className="h-[1px] bg-gray-100 my-4" />
                     <DetailRow label="Identifier" value={employee.identifier} />
@@ -42,8 +57,8 @@ export default function EmployeeDetailsScreen() {
                 </Card>
 
                 <Button
-                    title="Proceed to Facial Capture"
-                    onPress={() => router.push('/enrollment/face')}
+                    title="Proceed to Biometric Capture"
+                    onPress={() => router.push('/enrollment/fingerprint')}
                     variant="filled"
                     className="mt-4"
                 />
@@ -54,14 +69,17 @@ export default function EmployeeDetailsScreen() {
                     variant="text"
                     className="mt-2"
                 />
-            </ScrollView>
+            </Animated.ScrollView>
         </SafeAreaView>
     );
 }
 
 const DetailRow = ({ label, value }: { label: string; value: string }) => (
-    <View className="flex-col">
-        <Text className="text-sm text-gray-500 mb-1">{label}</Text>
-        <Text className="text-lg font-semibold text-gray-900">{value}</Text>
+    <View className="flex-row items-center justify-between">
+        <View className="flex-1">
+            <Text className="text-sm text-gray-500 mb-1">{label}</Text>
+            <Text className="text-lg font-semibold text-gray-900">{value}</Text>
+        </View>
+        <Ionicons name="checkmark-circle" size={24} color="#10B981" />
     </View>
 );

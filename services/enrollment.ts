@@ -1,4 +1,4 @@
-export const submitEnrollment = async (data: any): Promise<boolean> => {
+export const submitEnrollment = async (data: { employeeId: string; images: string[]; fingerprints: string[] }): Promise<boolean> => {
     return new Promise((resolve, reject) => {
         setTimeout(() => {
             // Mock successful submission

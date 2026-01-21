@@ -3,20 +3,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
-import { StepIndicator } from '../../components/ui/StepIndicator';
+import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Card } from '../../components/ui/Card';
 import React from 'react';
 
 export default function FingerprintScreen() {
     const router = useRouter();
-    const addFingerprint = useEnrollmentStore((state) => state.addFingerprint);
-    const fingerprints = useEnrollmentStore((state) => state.fingerprints);
-    const [isBiometricSupported, setIsBiometricSupported] = React.useState(false)
-
-    const biometricFallBack = () => {
-    console.log('Biometric not supported')
-    }
+    const { addFingerprint, fingerprints } = useEnrollmentStore();
 
     const currentCount = fingerprints.length;
     const isComplete = currentCount >= 3;
@@ -41,9 +35,7 @@ export default function FingerprintScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <View className="pt-6 bg-background">
-                <StepIndicator currentStep={3} totalSteps={5} />
-            </View>
+            <EnhancedStepIndicator currentStep={3} totalSteps={5} />
 
             <View className="flex-1 p-6 items-center">
                 <Text className="text-2xl font-bold text-primary mb-2 text-center">Fingerprint Capture</Text>
