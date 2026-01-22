@@ -4,8 +4,13 @@
   "main": "index.js",
   "scripts": {
     "start": "react-native start",
+    "reset": "react-native start --reset-cache",
     "android": "react-native run-android",
     "ios": "react-native run-ios",
+    "ios:device": "react-native run-ios --device",
+    "build:apk": "cd android && ./gradlew assembleRelease",
+    "build:aab": "cd android && ./gradlew bundleRelease",
+    "clean": "cd android && ./gradlew clean && cd ..",
     "web": "react-native start"
   },
   "dependencies": {
@@ -48,6 +53,7 @@
     "@types/react-dom": "~19.1.0",
     "@types/react-native-vector-icons": "^6.4.18",
     "babel-preset-react-native": "^4.0.1",
+    "react-native-dotenv": "^3.4.11",
     "react-refresh": "^0.18.0",
     "typescript": "~5.9.2"
   },

@@ -31,8 +31,8 @@ export default function DashboardScreen() {
 
     const quickActions = [
         {
-            icon: <Ionicons name="person-add" size={24} color="#10B981" />,
-            title: 'New Verification',
+            icon: <Ionicons name="doc" size={24} color="#10B981" />,
+            title: 'Scan Document',
             description: 'Add employee',
             route: 'Enrollment',
         },
