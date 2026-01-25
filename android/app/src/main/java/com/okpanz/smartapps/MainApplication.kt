@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package com.okpanz.smartapps
 
 import android.app.Application
@@ -24,6 +25,7 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               // add(MyReactNativePackage())
+              add(ExternalScannerPackage())
             }
 
           override fun getJSMainModuleName(): String = "index"

@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useState } from 'react';
 
 import { Input } from '../../components/ui/Input';
@@ -26,8 +26,12 @@ type IdentifierForm = z.infer<typeof identifierSchema>;
 
 export default function IdentifierScreen() {
     const navigation = useNavigation<any>();
+    const route = useRoute<any>();
+    
+    // Use shallow selector to prevent infinite loop
     const setEmployee = useEnrollmentStore((state) => state.setEmployee);
     const resetEnrollment = useEnrollmentStore((state) => state.resetEnrollment);
+    
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -45,12 +49,14 @@ export default function IdentifierScreen() {
 
     const onSubmit = async (data: IdentifierForm) => {
         setLoading(true);
-        resetEnrollment();
-
+        resetEnrollment(); // This will reset data but we should preserve flowType if we wanted, but resetEnrollment implementation resets everything.
+        // Let's ensure flowType is preserved or re-set if needed. 
+        // Actually resetEnrollment in store resets: employee, images, fingerprints, documents. It does NOT reset flowType. So we are good.
+        
         try {
             const employee = await verifyIdentifier(data.identifier);
             setEmployee(employee);
-            navigation.navigate('Details');
+            navigation.navigate('Details'); // No need to pass flow params anymore
         } catch (error: any) {
             Alert.alert('Verification Failed', error.message || 'Invalid Identifier');
         } finally {
@@ -60,7 +66,7 @@ export default function IdentifierScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={1} totalSteps={5} />
+            <EnhancedStepIndicator currentStep={1} totalSteps={6} />
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

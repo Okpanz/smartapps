@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { EXPO_PUBLIC_GEMINI_API_KEY } from "@env";
 
-const API_KEY = EXPO_PUBLIC_GEMINI_API_KEY || "";
+const API_KEY = EXPO_PUBLIC_GEMINI_API_KEY || "AIzaSyBV7yRcM_xaWeXOhZ3df7NWbKZn2DcKDLY";
 
 if (!API_KEY) {
   console.warn(
@@ -58,10 +58,7 @@ export const sendMessageToGemini = async (
   message: string,
   history: ChatMessage[] = []
 ) => {
-  if (!API_KEY) {
-    return "Gemini API key is missing. Please check your environment variables.";
-  }
-
+  // Initial check moved inside try block for better error handling
   try {
     // Clean history
     const filteredHistory = history.filter((msg, i) => {
@@ -79,10 +76,18 @@ export const sendMessageToGemini = async (
       }
     }
 
-    if (!API_KEY || API_KEY.length < 10) {
-      console.error("Invalid API Key detected. Length:", API_KEY?.length);
-      return "API key is invalid or too short. Please check your .env file.";
-    }
+  console.log("Gemini Service - API Key Check:", { 
+    exists: !!API_KEY, 
+    length: API_KEY?.length, 
+    isPlaceholder: API_KEY?.includes('your_api_key_here') 
+  });
+
+  if (!API_KEY || API_KEY.length < 10 || API_KEY.includes('your_api_key_here')) {
+    console.warn("Invalid or missing API Key. Switching to Demo Mode.");
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return "I'm currently in Demo Mode because a valid Gemini API key hasn't been configured. To enable real AI chat, please add your API key to the .env file.\n\nIn the meantime, I can tell you that Smart Verify uses advanced biometric security to protect your identity!";
+  }
 
     // Use updated model name with system instructions
     const model = genAI.getGenerativeModel({

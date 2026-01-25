@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Alert, Image, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -11,7 +11,9 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 
 export default function SaveScreen() {
     const navigation = useNavigation<any>();
-    const { employee, images, fingerprints, resetEnrollment } = useEnrollmentStore();
+    const route = useRoute<any>();
+    const flow = route.params?.flow || 'enroll';
+    const { employee, images, fingerprints, documents, resetEnrollment } = useEnrollmentStore();
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -33,8 +35,18 @@ export default function SaveScreen() {
     }, []);
 
     const handleSubmit = async () => {
-        if (!employee || images.length < 2 || fingerprints.length < 3) {
-            Alert.alert('Incomplete', 'Please complete all steps before saving.');
+        const isBiometricComplete = images.length >= 2 && fingerprints.length >= 3;
+        const isScanComplete = documents.length > 0;
+
+        if (!employee) return;
+
+        if (flow === 'scan' && !isScanComplete) {
+            Alert.alert('Incomplete', 'Please upload at least one document or go back to enrollment.');
+            return;
+        }
+
+        if (flow === 'enroll' && !isBiometricComplete) {
+            Alert.alert('Incomplete', 'Please complete all biometric steps before saving.');
             return;
         }
 
@@ -74,7 +86,7 @@ export default function SaveScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={5} totalSteps={5} />
+            <EnhancedStepIndicator currentStep={6} totalSteps={6} />
 
             <Animated.ScrollView
                 contentContainerStyle={{ padding: 24 }}
@@ -107,46 +119,64 @@ export default function SaveScreen() {
                     </View>
                 </Card>
 
-                <Card variant="outlined" className="mb-4 p-6 rounded-3xl bg-white">
-                    <View className="flex-row items-center mb-4">
-                        <Ionicons name="finger-print-outline" size={24} color="#10B981" />
-                        <Text className="text-lg font-semibold text-primary ml-2">Fingerprints Captured</Text>
-                    </View>
-
-                    <View className="flex-row justify-between items-center bg-gray-50 p-4 rounded-2xl">
-                        <Text className="text-gray-500 font-medium">Captured Scans</Text>
-                        <View className="flex-row items-center">
-                            <Text className="text-lg font-bold text-primary mr-2">{fingerprints.length} / 3</Text>
-                            <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                {flow === 'enroll' && (
+                    <Card variant="outlined" className="mb-4 p-6 rounded-3xl bg-white">
+                        <View className="flex-row items-center mb-4">
+                            <Ionicons name="finger-print-outline" size={24} color="#10B981" />
+                            <Text className="text-lg font-semibold text-primary ml-2">Fingerprints Captured</Text>
                         </View>
-                    </View>
-                </Card>
 
+                        <View className="flex-row justify-between items-center bg-gray-50 p-4 rounded-2xl">
+                            <Text className="text-gray-500 font-medium">Captured Scans</Text>
+                            <View className="flex-row items-center">
+                                <Text className="text-lg font-bold text-primary mr-2">{fingerprints.length} / 3</Text>
+                                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                            </View>
+                        </View>
+                    </Card>
+                )}
                 <Card variant="outlined" className="mb-4 p-6 rounded-3xl bg-white">
                     <View className="flex-row items-center mb-4">
-                        <Ionicons name="camera-outline" size={24} color="#10B981" />
-                        <Text className="text-lg font-semibold text-primary ml-2">Facial Photos Captured</Text>
+                        <Ionicons name="document-attach-outline" size={24} color="#10B981" />
+                        <Text className="text-lg font-semibold text-primary ml-2">Documents Uploaded</Text>
                     </View>
-
-                    <View className="items-center mb-6">
-                        <Text className="text-sm text-gray-500 mb-1">Photos</Text>
-                        <Text className="text-xl font-bold text-primary">{images.length} / 2</Text>
-                    </View>
-
-                    <View className="flex-row gap-3 justify-center">
-                        {images.map((uri, idx) => (
-                            <View key={idx} className="items-center">
-                                <Image
-                                    source={{ uri }}
-                                    className="w-[80px] h-[100px] rounded-xl border-2 border-primary"
-                                />
-                                <View className="mt-2 bg-primary/10 px-3 py-1 rounded-full">
-                                    <Text className="text-xs font-bold text-primary">Photo {idx + 1}</Text>
-                                </View>
+                    <View className="bg-gray-50 p-4 rounded-2xl">
+                        {documents.map((doc, idx) => (
+                            <View key={doc.id} className="flex-row items-center justify-between mb-2 last:mb-0">
+                                <Text className="text-sm font-medium text-gray-700">{doc.type.replace(/_/g, ' ')}</Text>
+                                <Ionicons name="checkmark-done" size={18} color="#10B981" />
                             </View>
                         ))}
                     </View>
                 </Card>
+
+                {flow === 'enroll' && (
+                    <Card variant="outlined" className="mb-4 p-6 rounded-3xl bg-white">
+                        <View className="flex-row items-center mb-4">
+                            <Ionicons name="camera-outline" size={24} color="#10B981" />
+                            <Text className="text-lg font-semibold text-primary ml-2">Facial Photos Captured</Text>
+                        </View>
+
+                        <View className="items-center mb-6">
+                            <Text className="text-sm text-gray-500 mb-1">Photos</Text>
+                            <Text className="text-xl font-bold text-primary">{images.length} / 2</Text>
+                        </View>
+
+                        <View className="flex-row gap-3 justify-center">
+                            {images.map((uri, idx) => (
+                                <View key={idx} className="items-center">
+                                    <Image
+                                        source={{ uri }}
+                                        className="w-[80px] h-[100px] rounded-xl border-2 border-primary"
+                                    />
+                                    <View className="mt-2 bg-primary/10 px-3 py-1 rounded-full">
+                                        <Text className="text-xs font-bold text-primary">Photo {idx + 1}</Text>
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                    </Card>
+                )}
 
                 <Button
                     title="Submit Enrollment"

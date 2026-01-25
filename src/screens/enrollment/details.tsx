@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, ScrollView, SafeAreaView, Animated } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -10,7 +10,11 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 
 export default function EmployeeDetailsScreen() {
     const navigation = useNavigation<any>();
+    const route = useRoute<any>();
+    
+    // Use shallow selector
     const employee = useEnrollmentStore((state) => state.employee);
+    
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -29,7 +33,7 @@ export default function EmployeeDetailsScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={2} totalSteps={5} />
+            <EnhancedStepIndicator currentStep={2} totalSteps={6} />
 
             <Animated.ScrollView
                 contentContainerStyle={{ padding: 24 }}
@@ -57,8 +61,8 @@ export default function EmployeeDetailsScreen() {
                 </Card>
 
                 <Button
-                    title="Proceed to Biometric Capture"
-                    onPress={() => navigation.navigate('Fingerprint')}
+                    title="Proceed to Document Upload"
+                    onPress={() => navigation.navigate('Documents')}
                     variant="filled"
                     className="mt-4"
                 />

@@ -146,7 +146,7 @@ export const EnhancedStepIndicator = ({
                     return (
                         <View
                             key={`step-${index}`}
-                            style={[styles.stepWrapper, isLast && styles.lastStep]}
+                            style={styles.stepWrapper}
                         >
                             {/* Step Circle */}
                             <Animated.View
@@ -263,9 +263,6 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         position: 'relative',
-    },
-    lastStep: {
-        flex: 0,
     },
     stepCircle: {
         width: 40,

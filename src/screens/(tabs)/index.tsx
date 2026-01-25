@@ -9,9 +9,12 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { DUMMY_ACTIVITIES } from '../../constants/dummyData';
 
+import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
+
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
     const { user, logout } = useAuthStore();
+    // const setFlowType = useEnrollmentStore((state) => state.setFlowType);
 
     const handleLogout = () => {
         logout();
@@ -31,10 +34,10 @@ export default function DashboardScreen() {
 
     const quickActions = [
         {
-            icon: <Ionicons name="doc" size={24} color="#10B981" />,
+            icon: <Ionicons name="scan-outline" size={24} color="#10B981" />,
             title: 'Scan Document',
-            description: 'Add employee',
-            route: 'Enrollment',
+            description: 'Verify & Scan',
+            route: 'DocumentVerification',
         },
         {
             icon: <Ionicons name="settings" size={24} color="#10B981" />,
@@ -74,8 +77,8 @@ export default function DashboardScreen() {
                     {/* Stats Cards */}
                     <View className="flex-row flex-wrap gap-2">
                         {stats.map((stat, index) => (
-                            <View 
-                                key={index} 
+                            <View
+                                key={index}
                                 className="bg-gray-50 rounded-xl p-3 border border-gray-200"
                                 style={{ width: '31%' }}
                             >
@@ -95,7 +98,10 @@ export default function DashboardScreen() {
                     <View className="mb-6">
                         <Text className="text-lg font-bold text-gray-900 mb-4">Start Verification</Text>
                         <TouchableOpacity
-                            onPress={() => navigation.navigate('Enrollment', { screen: 'Identifier' })}
+                            onPress={() => {
+                                // setFlowType('enroll');
+                                navigation.navigate('Enrollment', { screen: 'Identifier' });
+                            }}
                             activeOpacity={0.9}
                             className="bg-green-600 rounded-3xl p-6"
                         >
@@ -125,7 +131,17 @@ export default function DashboardScreen() {
                             {quickActions.map((action, index) => (
                                 <TouchableOpacity
                                     key={index}
-                                    onPress={() => action.route === 'Enrollment' ? navigation.navigate('Enrollment', { screen: 'Identifier' }) : navigation.navigate(action.route)}
+                                    onPress={() => {
+                                        if (action.route === 'Enrollment') {
+                                            // setFlowType('enroll');
+                                            navigation.navigate('Enrollment', { screen: 'Identifier' });
+                                        } else if (action.route === 'DocumentVerification') {
+                                            // setFlowType('scan');
+                                            navigation.navigate('DocumentVerification', { screen: 'Identifier' });
+                                        } else {
+                                            navigation.navigate(action.route);
+                                        }
+                                    }}
                                     activeOpacity={0.8}
                                     className="bg-white rounded-2xl p-4 border border-gray-200"
                                     style={{ width: '48%' }}

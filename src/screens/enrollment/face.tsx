@@ -111,7 +111,7 @@ export default function FaceCaptureScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={4} totalSteps={5} />
+            <EnhancedStepIndicator currentStep={5} totalSteps={6} />
 
             <View className="flex-1 p-6">
                 <Text className="text-2xl font-bold text-primary mb-2 text-center">Facial Capture</Text>

@@ -9,4 +9,7 @@ const { withNativeWind } = require('nativewind/metro');
  */
 const config = getDefaultConfig(__dirname);
 
+// Disable Watchman due to permission issues
+config.resolver.useWatchman = false;
+
 module.exports = withNativeWind(config, { input: './src/global.css' });

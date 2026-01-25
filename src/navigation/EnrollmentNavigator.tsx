@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import IdentifierScreen from '../screens/enrollment/identifier';
 import DetailsScreen from '../screens/enrollment/details';
+import DocumentUploadScreen from '../screens/enrollment/documents';
 import FingerprintScreen from '../screens/enrollment/fingerprint';
 import FaceCaptureScreen from '../screens/enrollment/face';
 import SaveEnrollmentScreen from '../screens/enrollment/save';
@@ -31,6 +32,11 @@ export default function EnrollmentNavigator() {
                 name="Details"
                 component={DetailsScreen}
                 options={{ title: 'Employee Details' }}
+            />
+            <Stack.Screen
+                name="Documents"
+                component={DocumentUploadScreen}
+                options={{ title: 'Document Upload' }}
             />
             <Stack.Screen
                 name="Fingerprint"
