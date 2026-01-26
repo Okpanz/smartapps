@@ -12,6 +12,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Card } from '../../components/ui/Card';
 import { FingerprintImage } from '../../components/ui/FingerprintImage';
 import { Toast, ToastType } from '../../components/ui/Toast';
+import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { externalScanner, UsbDevice } from '../../services/externalScanner';
 
 export default function FingerprintScreen() {
@@ -44,6 +45,27 @@ export default function FingerprintScreen() {
         message: '', 
         type: 'info' 
     });
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        type: AlertType;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
+        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig(prev => ({ ...prev, visible: false }));
+    };
+
     const lastImageRef = useRef<string | null>(null);
     const scrollViewRef = useRef<ScrollView>(null);
 
@@ -255,7 +277,7 @@ export default function FingerprintScreen() {
             setReviewState({ hasCapture: false, quality: 0, data: null, preview: null });
 
             if (currentCount + 1 >= 3) {
-                Alert.alert('Success', 'Fingerprint capture completed.');
+                showAlert('Success', 'Fingerprint capture completed.', 'success');
             } else {
                 startScanning();
             }
@@ -289,6 +311,14 @@ export default function FingerprintScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
+            <CustomAlert 
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+                onClose={hideAlert}
+                onConfirm={alertConfig.onConfirm}
+            />
             <Toast 
                 visible={toastState.visible}
                 message={toastState.message}
