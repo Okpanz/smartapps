@@ -123,8 +123,6 @@ class DatabaseService {
     }
 
     try {
-      // Use sqlBatch for atomic execution of all inserts.
-      // Transactions with async/await loops often close prematurely in react-native-sqlite-storage.
       await (this.db as any).sqlBatch(batch);
       console.log(`[Database] Upserted ${employees.length} records via batch`);
     } catch (error: any) {

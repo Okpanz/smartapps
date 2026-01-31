@@ -13,7 +13,7 @@ export interface AuditLog {
 
 export const getRecentActivity = async (limit: number = 5): Promise<AuditLog[]> => {
     try {
-        const response = await api.get(`/audit/recent?limit=${limit}`);
+        const response = await api.get(`/audit/logs?limit=${limit}`);
         if (response.data && response.data.success) {
             return response.data.data;
         }

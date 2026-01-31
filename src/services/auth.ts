@@ -85,14 +85,16 @@ export const logout = async (): Promise<void> => {
 
 export const downloadOfflineRecords = async (
     onProgress?: (count: number) => void,
-    serviceId: string | number = '234070795'
+    serviceId?: string | number
 ): Promise<number> => {
     try {
-        let allEmployees: any[] = [];
+        if (!serviceId) {
+            throw new Error('Service ID is required for downloading records');
+        }
+
         let hasMore = true;
         let nextCursor: number | null = null;
         
-        // Handle Android Emulator networking for local domains
         let baseURL = 'http://smartpay.test';
         const headers: any = {
             'Accept': 'application/json'
@@ -100,7 +102,6 @@ export const downloadOfflineRecords = async (
 
 
         if (Platform.OS === 'android') {
-            // Android Emulator Loopback IP (accesses host machine localhost)
             baseURL = 'http://10.0.2.2'; 
             headers['Host'] = 'smartpay.test';
         }
@@ -342,52 +343,17 @@ export const changePassword = async (data: any): Promise<boolean> => {
     }
 };
 
-export const register = async (userData: any): Promise<User> => {
-    console.log(`Registering user to ${api.defaults.baseURL}`);
+export const createAdhockStaff = async (userData: any): Promise<any> => {
     try {
-        const response = await api.post<LoginResponse>('/auth/register', userData);
-
-        console.log('Register Response:', JSON.stringify(response.data, null, 2));
-
-        if (response.data.success && response.data.data && response.data.data.token) {
-
-            const { token, ...user } = response.data.data;
-
-            // Store token for subsequent requests
-            await AsyncStorage.setItem('userToken', token);
-
-            return {
-                id: String(user._id),
-                username: user.username,
-                name: user.username,
-                email: user.email,
-                role: user.role,
-                ...user
-            };
+        const response = await api.post('/auth/create-adhock-staff', userData);
+        if (response.data && response.data.success) {
+            return response.data.data;
         }
-
-        let errorMessage = response.data.message || 'Registration failed';
-        // Extract validation errors if present
-        if (response.data.data && typeof response.data.data === 'object') {
-            const validationErrors = Object.values(response.data.data)
-                .flat()
-                .filter(msg => typeof msg === 'string');
-
-            if (validationErrors.length > 0) {
-                errorMessage = validationErrors.join('\n');
-            }
-        }
-        throw new Error(errorMessage);
-
+        throw new Error(response.data.message || 'Failed to create adhock staff');
     } catch (error: any) {
-        if (error.response) {
-            console.error('Register Service Error Response:', error.response.status, error.response.data);
-            // Handle specific error messages from server
-            if (error.response.data && error.response.data.message) {
-                throw new Error(error.response.data.message);
-            }
-        } else {
-            console.error('Register Service Error:', error.message);
+        console.error('[AuthService] Create Adhock Staff Error:', error);
+        if (error.response && error.response.data && error.response.data.message) {
+             throw new Error(error.response.data.message);
         }
         throw error;
     }

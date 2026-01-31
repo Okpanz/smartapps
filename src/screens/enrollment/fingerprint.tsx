@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Alert, Platform, ActivityIndicator, Modal, FlatList, PermissionsAndroid, ScrollView, Share } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import RNFS from 'react-native-fs';
 import { useNavigation } from '@react-navigation/native';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';

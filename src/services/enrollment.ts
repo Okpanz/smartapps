@@ -17,7 +17,7 @@ interface OfflineEnrollment {
     id: string;
     data: EnrollmentData;
     timestamp: number;
-    status: 'pending' | 'syncing' | 'failed';
+    status: 'pending' | 'syncing' | 'failed' | 'verified';
 }
 
 const convertToBase64 = async (uri: string): Promise<string> => {
@@ -41,7 +41,7 @@ const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => 
             id: offlineId,
             data: data,
             timestamp: Date.now(),
-            status: 'pending'
+            status: 'verified'
         };
 
         const existingStr = await AsyncStorage.getItem('pendingEnrollments');

@@ -23,12 +23,13 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
     const navigation = useNavigation<any>();
-    const { login: setAuthUser, loadUserFromStorage, isAuthenticated, user } = useAuthStore((state) => ({
-        login: state.login,
-        loadUserFromStorage: state.loadUserFromStorage,
-        isAuthenticated: state.isAuthenticated,
-        user: state.user
-    }));
+    
+    // Use individual selectors to avoid unnecessary re-renders and "Maximum update depth exceeded" errors
+    const setAuthUser = useAuthStore((state) => state.login);
+    const loadUserFromStorage = useAuthStore((state) => state.loadUserFromStorage);
+    const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+    const user = useAuthStore((state) => state.user);
+
     const [loading, setLoading] = useState(false);
     
     const [canUseBiometrics, setCanUseBiometrics] = useState(false);

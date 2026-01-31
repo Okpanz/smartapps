@@ -5,7 +5,7 @@ export interface Document {
     id: string;
     type: string;
     uri: string;
-    status: 'PENDING' | 'SYNCED' | 'FAILED';
+    status: 'PENDING' | 'SYNCED' | 'FAILED' | 'VERIFIED';
     uploadedBy: string;
     createdAt: number;
 }

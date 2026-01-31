@@ -7,12 +7,13 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
-  Switch
+  Switch,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useNavigation } from '@react-navigation/native';
-import { changePassword, downloadOfflineRecords } from '../../services/auth';
+import { changePassword, downloadOfflineRecords, createAdhockStaff } from '../../services/auth';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,6 +32,14 @@ export default function SettingsScreen() {
 
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+
+  // Adhock Staff Creation State
+  const [staffModalVisible, setStaffModalVisible] = useState(false);
+  const [staffName, setStaffName] = useState('');
+  const [staffEmail, setStaffEmail] = useState('');
+  const [staffPassword, setStaffPassword] = useState('');
+  const [staffServiceId, setStaffServiceId] = useState('');
+  const [creatingStaff, setCreatingStaff] = useState(false);
 
   React.useEffect(() => {
     checkBiometricStatus();
@@ -80,14 +89,14 @@ export default function SettingsScreen() {
       setDownloading(true);
       setDownloadProgress(0);
       
-      let serviceId = user?.service_id || '234070795';
-      if (serviceId === 1 || serviceId === '1') {
-         serviceId = '234070795';
+      if (!user?.service_id) {
+        console.log(`[Settings] Service ID not found in user profile: ${user?.service_id}`);
+        throw new Error('Service ID not found in user profile. Please contact support.');
       }
-      
+
       const totalCount = await downloadOfflineRecords((count) => {
         setDownloadProgress(count);
-      }, serviceId);
+      }, user.service_id);
       
       Alert.alert(
         'Download Complete', 
@@ -98,6 +107,34 @@ export default function SettingsScreen() {
       Alert.alert('Download Failed', error.message || 'Could not download records');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleCreateStaff = async () => {
+    if (!staffName || !staffEmail || !staffPassword || !staffServiceId) {
+        Alert.alert('Validation Error', 'All fields are required');
+        return;
+    }
+
+    try {
+        setCreatingStaff(true);
+        await createAdhockStaff({
+            name: staffName,
+            email: staffEmail,
+            password: staffPassword,
+            service_id: staffServiceId
+        });
+        Alert.alert('Success', 'Adhock Staff created successfully');
+        setStaffModalVisible(false);
+        // Reset form
+        setStaffName('');
+        setStaffEmail('');
+        setStaffPassword('');
+        setStaffServiceId('');
+    } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to create staff');
+    } finally {
+        setCreatingStaff(false);
     }
   };
 
@@ -169,6 +206,32 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
+
+        {/* ADMIN PANEL */}
+        {user?.role === 'admin' && (
+            <View className="mb-10">
+                <Text className="text-xs font-semibold text-gray-400 mb-3 uppercase">
+                    Admin Panel
+                </Text>
+                <View className="bg-white rounded-2xl border border-gray-100 p-4">
+                    <TouchableOpacity
+                        onPress={() => setStaffModalVisible(true)}
+                        className="flex-row items-center justify-between"
+                    >
+                        <View className="flex-row items-center flex-1">
+                            <View className="w-10 h-10 rounded-full bg-purple-50 items-center justify-center mr-3">
+                                <Ionicons name="people-outline" size={20} color="#7C3AED" />
+                            </View>
+                            <View>
+                                <Text className="text-base font-medium text-gray-900">Create Adhock Staff</Text>
+                                <Text className="text-xs text-gray-500">Add new staff members</Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                    </TouchableOpacity>
+                </View>
+            </View>
+        )}
 
         {/* OFFLINE DATA */}
         <View className="mb-10">
@@ -290,6 +353,77 @@ export default function SettingsScreen() {
           <Text className="ml-2 font-bold text-red-600">Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* CREATE STAFF MODAL */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={staffModalVisible}
+        onRequestClose={() => setStaffModalVisible(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+            <View className="bg-white rounded-t-3xl p-6 h-[85%]">
+                <View className="flex-row justify-between items-center mb-6">
+                    <Text className="text-xl font-bold text-gray-900">Create Adhock Staff</Text>
+                    <TouchableOpacity onPress={() => setStaffModalVisible(false)}>
+                        <Ionicons name="close-circle" size={28} color="#9CA3AF" />
+                    </TouchableOpacity>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                    <View className="space-y-4">
+                        <Input
+                            label="Full Name"
+                            icon="person-outline"
+                            value={staffName}
+                            onChangeText={setStaffName}
+                            placeholder="e.g. John Doe"
+                        />
+                        <Input
+                            label="Email Address"
+                            icon="mail-outline"
+                            value={staffEmail}
+                            onChangeText={setStaffEmail}
+                            placeholder="e.g. john@example.com"
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                        />
+                        <Input
+                            label="Password"
+                            icon="key-outline"
+                            value={staffPassword}
+                            onChangeText={setStaffPassword}
+                            placeholder="Enter password"
+                            secureTextEntry
+                        />
+                         <Input
+                            label="Service ID"
+                            icon="business-outline"
+                            value={staffServiceId}
+                            onChangeText={setStaffServiceId}
+                            placeholder="e.g. 234006"
+                            keyboardType="numeric"
+                        />
+
+                        <TouchableOpacity
+                            onPress={handleCreateStaff}
+                            disabled={creatingStaff}
+                            className={`rounded-xl py-4 items-center mt-4 ${
+                                creatingStaff ? 'bg-purple-300' : 'bg-purple-600'
+                            }`}
+                        >
+                            {creatingStaff ? (
+                                <ActivityIndicator color="white" />
+                            ) : (
+                                <Text className="text-white font-bold">Create Staff Account</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }

@@ -2,6 +2,7 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { databaseService } from './database';
+import { useAuthStore } from '../hooks/useAuthStore';
 
 export interface Employee {
     id: string;
@@ -11,6 +12,7 @@ export interface Employee {
     fullname: string;
     accountNumber: string;
     department: string;
+    serviceId: string;
 }
 
 interface IdentifyResponse {
@@ -62,56 +64,101 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
             const response = await axios.get<{ status: boolean, message: string, data: any }>(url, {
                 params: { identifier },
                 headers,
-                timeout: 10000 // 10s timeout
+                timeout: 10000
             });
 
             console.log('[Verify] API Response:', JSON.stringify(response.data, null, 2));
 
             if (response.data && response.data.status && response.data.data) {
                 const foundEmployee = response.data.data;
-                // ... (existing logic)
                 let employeeData: any = null;
-                if (foundEmployee.employees && Array.isArray(foundEmployee.employees)) {
-                    if (foundEmployee.employees.length > 0) employeeData = foundEmployee.employees[0];
+                
+                console.log('[Verify] Raw foundEmployee:', JSON.stringify(foundEmployee, null, 2));
+
+                // Extract employee object from various possible structures
+                if (foundEmployee.employee) {
+                    employeeData = foundEmployee.employee;
+                } else if (foundEmployee.employees && Array.isArray(foundEmployee.employees)) {
+                    employeeData = foundEmployee.employees[0];
                 } else if (Array.isArray(foundEmployee)) {
-                    if (foundEmployee.length > 0) employeeData = foundEmployee[0];
+                    employeeData = foundEmployee[0];
                 } else {
                     employeeData = foundEmployee;
                 }
 
                 if (!employeeData) throw new Error('Employee not found in API response');
+
+                // Double check if we need to unwrap one more level (e.g. data.data.employee.employee)
+                if (!employeeData.fullname && employeeData.employee) {
+                    console.log('[Verify] unwrapping nested employee object...');
+                    employeeData = employeeData.employee;
+                }
                 
-                console.log('[Verify] Employee found via API:', employeeData.fullname);
-                const nameParts = (employeeData.fullname || '').split(' ');
+                console.log('[Verify] Final extracted employeeData keys:', Object.keys(employeeData));
+                console.log('[Verify] Employee Name:', employeeData.fullname);
+
+                // Ensure required fields are present (handle potential naming variations)
+                const fullname = employeeData.fullname || employeeData.full_name || employeeData.name || '';
+                const accountNumber = employeeData.account_number || employeeData.accountNumber || '';
+                const department = employeeData.department || '';
+                const serviceId = employeeData.service_id || employeeData.serviceId;
+
+                // Save to local DB for future offline access
+                try {
+                   console.log('[Verify] Saving verified employee to local DB...');
+                   // Make sure we save the standardized structure
+                   const employeeToSave = {
+                       ...employeeData,
+                       fullname,
+                       account_number: accountNumber,
+                       department,
+                       service_id: serviceId
+                   };
+                   await databaseService.upsertEmployees([employeeToSave]);
+                } catch (dbError) {
+                   console.warn('[Verify] Failed to save verified employee to local DB:', dbError);
+                }
+
+                const nameParts = fullname.split(' ');
                 const firstName = nameParts[0] || '';
                 const lastName = nameParts.slice(1).join(' ') || '';
+
+                const currentUser = useAuthStore.getState().user;
+                // Check for service mismatch for adhock staff
+                if (currentUser?.role === 'adhock') {
+                    const employeeServiceId = String(serviceId || '');
+                    const userServiceId = String(currentUser.service_id || '');
+                    
+                    console.log(`[Verify] Checking Service Match: Employee(${employeeServiceId}) vs User(${userServiceId})`);
+                    
+                    if (employeeServiceId !== userServiceId) {
+                         throw new Error('Service mismatch');
+                    }
+                }
 
                 return {
                     id: employeeData.employee_number || employeeData.employment_number || employeeData.id,
                     identifier: identifier,
                     firstName,
                     lastName,
-                    fullname: employeeData.fullname,
-                    accountNumber: employeeData.account_number,
-                    department: employeeData.department,
+                    fullname: fullname,
+                    accountNumber: accountNumber,
+                    department: department,
+                    serviceId: String(serviceId || '')
                 };
             } else {
                 throw new Error(response.data?.message || 'Employee not found');
             }
         } catch (error: any) {
             console.warn('[Verify] API request failed, attempting fallback to local storage:', error.message);
-            // Fallback to local storage if API fails (network error, timeout, etc)
-            // But NOT if API returned 404 (User not found) - actually, standard axios error for 404 might be caught here.
-            // If the error is "Network Error" or timeout, definitely fallback.
-            // If 404, maybe not? But current API returns 200 with empty data for "not found" usually? 
-            // The code above throws 'Employee not found' if data is empty.
             
-            // If the error is strictly "Employee not found" (logic error), we shouldn't fallback to local?
-            // Actually, if we are "Online" but API says "Not Found", local storage might have it? Unlikely if synced.
-            // But if we are "Online" and API is DOWN (500, Network Error), we SHOULD fallback.
-            
-            if (error.message === 'Employee not found' || error.message === 'Employee not found in API response') {
-                throw error; // Propagate "Not Found" if API explicitly said so
+            if (error.response && error.response.status === 404) {
+                console.warn('[Verify] API returned 404 Not Found. Skipping offline fallback.');
+                throw new Error('Employee not found');
+            }
+
+            if (error.message === 'Employee not found' || error.message === 'Employee not found in API response' || error.message === 'Service mismatch') {
+                throw error;
             }
 
             return await searchLocalStorage(identifier);
@@ -119,7 +166,7 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
 
     } catch (error: any) {
         console.error('Verify Identifier Error:', error.message);
-        throw new Error(error.message || 'Verification failed');
+        throw error; 
     }
 };
 
@@ -140,6 +187,11 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
             const firstName = nameParts[0] || '';
             const lastName = nameParts.slice(1).join(' ') || '';
 
+            const currentUser = useAuthStore.getState().user;
+            if (currentUser?.role === 'adhock' && String(foundEmployee.service_id) !== String(currentUser.service_id)) {
+                 throw new Error('Service mismatch');
+            }
+
             return {
                 id: foundEmployee.employee_number || foundEmployee.employment_number || foundEmployee.id,
                 identifier: identifier,
@@ -148,6 +200,7 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
                 fullname: foundEmployee.fullname,
                 accountNumber: foundEmployee.account_number,
                 department: foundEmployee.department,
+                serviceId: String(foundEmployee.service_id)
             };
         } else {
             console.log(`[Verify] No local match found for identifier: ${identifier}`);
@@ -155,6 +208,10 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
         }
     } catch (error: any) {
         console.error('[Verify] SQLite Search Error:', error.message);
+        // Don't mask specific errors like "Service mismatch"
+        if (error.message === 'Service mismatch') {
+            throw error;
+        }
         throw new Error('Offline search failed. Please try again.');
     }
 };

@@ -84,7 +84,7 @@ export default function VerificationDocumentsScreen() {
                 id: Math.random().toString(36).substring(7),
                 type: data.type === 'OTHER' ? data.otherLabel || 'Other' : data.type,
                 uri: selectedFile.uri,
-                status: 'PENDING',
+                status: 'VERIFIED',
                 uploadedBy: 'user-001', // Mock user
                 createdAt: Date.now(),
             };
