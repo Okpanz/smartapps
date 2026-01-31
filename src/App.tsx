@@ -11,13 +11,26 @@ import LandingScreen from './screens/index';
 import TabNavigator from './navigation/TabNavigator';
 import EnrollmentNavigator from './navigation/EnrollmentNavigator';
 import DocumentVerificationNavigator from './navigation/DocumentVerificationNavigator';
+import { NetworkIndicator } from './components/NetworkIndicator';
+import { useNetInfo } from '@react-native-community/netinfo';
+import { syncPendingEnrollments } from './services/enrollment';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+    const netInfo = useNetInfo();
+
+    React.useEffect(() => {
+        if (netInfo.isConnected === true) {
+            console.log('[App] Network connected, attempting sync...');
+            syncPendingEnrollments();
+        }
+    }, [netInfo.isConnected]);
+
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <SafeAreaProvider>
+                <NetworkIndicator />
                 <NavigationContainer>
                     <StatusBar barStyle="dark-content" />
                     <Stack.Navigator screenOptions={{ headerShown: false }}>

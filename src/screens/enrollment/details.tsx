@@ -51,7 +51,7 @@ export default function EmployeeDetailsScreen() {
                 </View>
 
                 <Card variant="outlined" className="p-6 mb-6 rounded-3xl bg-white border border-gray-100 shadow-sm">
-                    <DetailRow label="Full Name" value={`${employee.firstName} ${employee.lastName}`} />
+                    <DetailRow label="Full Name" value={employee.fullname || `${employee.firstName} ${employee.lastName}`} />
                     <View className="h-[1px] bg-gray-100 my-4" />
                     <DetailRow label="Identifier" value={employee.identifier} />
                     <View className="h-[1px] bg-gray-100 my-4" />

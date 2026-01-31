@@ -54,11 +54,12 @@ export default function SaveScreen() {
         try {
             await submitEnrollment({
                 employeeId: employee.id,
+                employeeInfo: employee,
                 images,
                 fingerprints,
+                documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
             });
 
-            // Success Logic could be a dedicated success screen, but alert is fine for now
             Alert.alert(
                 'Enrollment Successful',
                 'The employee data has been verified and saved.',
@@ -67,7 +68,8 @@ export default function SaveScreen() {
                         text: 'Return to Dashboard',
                         onPress: () => {
                             resetEnrollment();
-                            navigation.reset({
+                            // Reset the root navigator (parent of EnrollmentNavigator) to Tabs
+                            navigation.getParent()?.reset({
                                 index: 0,
                                 routes: [{ name: 'Tabs' }],
                             });
@@ -75,8 +77,9 @@ export default function SaveScreen() {
                     }
                 ]
             );
-        } catch (error) {
-            Alert.alert('Error', 'Submission failed. Please try again.');
+        } catch (error: any) {
+            console.error('[SaveScreen] Submission Error:', error);
+            Alert.alert('Error', `Submission failed: ${error.message || 'Unknown error'}`);
         } finally {
             setLoading(false);
         }

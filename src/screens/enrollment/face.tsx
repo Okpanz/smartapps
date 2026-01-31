@@ -1,6 +1,6 @@
 import { View, Text, Image, TouchableOpacity, Alert, TouchableWithoutFeedback, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor, useCameraFormat } from 'react-native-vision-camera';
 import { useFaceDetector, Face } from 'react-native-vision-camera-face-detector';
 import { Worklets } from 'react-native-worklets-core';
 import { useNavigation } from '@react-navigation/native';
@@ -18,6 +18,9 @@ export default function FaceCaptureScreen() {
     const cameraRef = useRef<Camera>(null);
     const [facing, setFacing] = useState<'front' | 'back'>('front');
     const device = useCameraDevice(facing);
+    const format = useCameraFormat(device, [
+        { photoResolution: { width: 1280, height: 720 } }
+    ]);
 
 
     const [preview, setPreview] = useState<string | null>(null);
@@ -155,6 +158,7 @@ export default function FaceCaptureScreen() {
                                 device={device}
                                 isActive={true}
                                 photo={true}
+                                format={format}
                                 frameProcessor={frameProcessor}
                             />
                             <TouchableWithoutFeedback onPress={handleDoubleTap}>

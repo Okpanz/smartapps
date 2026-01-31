@@ -6,10 +6,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import DocumentPicker from 'react-native-document-picker';
+import DocumentScanner from 'react-native-document-scanner-plugin';
 
 import { useEnrollmentStore, Document } from '../../hooks/useEnrollmentStore';
+import { submitEnrollment } from '../../services/enrollment';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
@@ -52,42 +52,23 @@ export default function VerificationDocumentsScreen() {
 
     const selectedType = watch('type');
 
-    const handlePickImage = async (useCamera: boolean) => {
-        const options = {
-            mediaType: 'photo' as const,
-            includeBase64: false,
-            quality: 0.8 as const,
-        };
-
-        const result = useCamera ? await launchCamera(options) : await launchImageLibrary(options);
-
-        if (result.assets && result.assets.length > 0) {
-            const asset = result.assets[0];
-            setSelectedFile({
-                uri: asset.uri!,
-                name: asset.fileName || `IMG_${Date.now()}.jpg`,
-                type: asset.type || 'image/jpeg',
-            });
-        }
-    };
-
-    const handlePickDocument = async () => {
+    const handleScanDocument = async () => {
         try {
-            const res = await DocumentPicker.pick({
-                type: [DocumentPicker.types.pdf, DocumentPicker.types.images],
-                copyTo: 'cachesDirectory',
+            const { scannedImages } = await DocumentScanner.scanDocument({
+                maxNumDocuments: 1
             });
-            const picked = res[0];
-            setSelectedFile({
-                uri: picked.fileCopyUri || picked.uri,
-                name: picked.name || `DOC_${Date.now()}`,
-                type: picked.type || 'application/octet-stream',
-            });
-        } catch (err) {
-            if (!DocumentPicker.isCancel(err)) {
-                console.error("Document Picker Error:", err);
-                Alert.alert('Error', 'Failed to pick document: ' + (err instanceof Error ? err.message : String(err)));
+
+            if (scannedImages && scannedImages.length > 0) {
+                const scannedImageUri = scannedImages[0];
+                setSelectedFile({
+                    uri: scannedImageUri,
+                    name: `SCAN_${Date.now()}.jpg`,
+                    type: 'image/jpeg',
+                });
             }
+        } catch (err) {
+            console.error("Scanner Error:", err);
+            Alert.alert('Error', 'Failed to scan document: ' + (err instanceof Error ? err.message : String(err)));
         }
     };
 
@@ -120,12 +101,44 @@ export default function VerificationDocumentsScreen() {
         }
     };
 
-    const handleFinish = () => {
-         Alert.alert(
-            'Verification Complete', 
-            'Documents have been uploaded successfully.', 
-            [{ text: 'Return Home', onPress: () => navigation.getParent()?.navigate('Tabs') }]
-        );
+    const handleFinish = async () => {
+        if (!employee) return;
+
+        if (documents.length === 0) {
+            Alert.alert('No Documents', 'Please add at least one document before finishing.');
+            return;
+        }
+
+        setIsUploading(true);
+        try {
+            await submitEnrollment({
+                employeeId: employee.id,
+                employeeInfo: employee,
+                images: [],
+                fingerprints: [],
+                documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
+            });
+
+            Alert.alert(
+                'Verification Complete', 
+                'Documents have been uploaded successfully.', 
+                [{ 
+                    text: 'Return Home', 
+                    onPress: () => {
+                        // Reset the root navigator to Tabs to clear the stack
+                        navigation.getParent()?.reset({
+                            index: 0,
+                            routes: [{ name: 'Tabs' }],
+                        });
+                    }
+                }]
+            );
+        } catch (error) {
+            console.error('Upload Error:', error);
+            Alert.alert('Error', 'Failed to upload documents. Please try again.');
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     return (
@@ -201,30 +214,17 @@ export default function VerificationDocumentsScreen() {
 
                     {!selectedFile ? (
                         <View className="mb-4">
-                            <Text className="text-sm font-medium text-gray-700 mb-3">Pick Document Source</Text>
-                            <View className="flex-row gap-3">
-                                <TouchableOpacity
-                                    onPress={() => handlePickImage(true)}
-                                    className="flex-1 items-center justify-center py-4 bg-gray-50 rounded-2xl border border-gray-100 border-dashed"
-                                >
-                                    <Ionicons name="camera-outline" size={24} color="#6B7280" />
-                                    <Text className="text-xs text-gray-500 mt-1">Camera</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => handlePickImage(false)}
-                                    className="flex-1 items-center justify-center py-4 bg-gray-50 rounded-2xl border border-gray-100 border-dashed"
-                                >
-                                    <Ionicons name="images-outline" size={24} color="#6B7280" />
-                                    <Text className="text-xs text-gray-500 mt-1">Gallery</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={handlePickDocument}
-                                    className="flex-1 items-center justify-center py-4 bg-gray-50 rounded-2xl border border-gray-100 border-dashed"
-                                >
-                                    <Ionicons name="document-outline" size={24} color="#6B7280" />
-                                    <Text className="text-xs text-gray-500 mt-1">Files (PDF)</Text>
-                                </TouchableOpacity>
-                            </View>
+                            <Text className="text-sm font-medium text-gray-700 mb-3">Scan Document</Text>
+                            <TouchableOpacity
+                                onPress={handleScanDocument}
+                                className="w-full items-center justify-center py-8 bg-gray-50 rounded-2xl border border-gray-200 border-dashed active:bg-gray-100"
+                            >
+                                <View className="w-16 h-16 bg-white rounded-full items-center justify-center mb-3 shadow-sm border border-gray-100">
+                                    <Ionicons name="scan-outline" size={32} color="#4F46E5" />
+                                </View>
+                                <Text className="text-base font-medium text-gray-900">Tap to Scan Document</Text>
+                                <Text className="text-sm text-gray-500 mt-1">Camera will open to scan</Text>
+                            </TouchableOpacity>
                         </View>
                     ) : (
                         <View className="mb-6">

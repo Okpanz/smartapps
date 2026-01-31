@@ -16,9 +16,7 @@ import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 
 const identifierSchema = z.object({
     identifier: z.string()
-        .min(1, 'Identifier is required')
-        .refine((val) => /^\d+$/.test(val), 'Must contain only numbers')
-        .refine((val) => val.length >= 10, 'Must be at least 10 digits'),
+        .min(3, 'Identifier must be at least 3 characters'),
 });
 
 type IdentifierForm = z.infer<typeof identifierSchema>;
@@ -89,10 +87,11 @@ export default function VerificationIdentifierScreen() {
                             label="Identifier / Account Number"
                             name="identifier"
                             control={control}
-                            placeholder="e.g. 1234567890"
-                            keyboardType="numeric"
+                            placeholder="e.g. EMP123 or John Doe"
+                            keyboardType="default"
+                            autoCapitalize="none"
                             error={errors.identifier?.message}
-                            helperText="Enter the 10-digit BVN or ID"
+                            helperText="Enter Employee ID, Name, or Account Number"
                         />
 
                         <Button

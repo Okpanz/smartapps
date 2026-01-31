@@ -1,13 +1,16 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { DUMMY_ACTIVITIES } from '../../constants/dummyData';
+import { getRecentActivity, AuditLog } from '../../services/activity';
+import { getDashboardStats } from '../../services/dashboard';
+import { formatDistanceToNow } from 'date-fns';
 
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 
@@ -15,23 +18,99 @@ export default function DashboardScreen() {
     const navigation = useNavigation<any>();
     const { user, logout } = useAuthStore();
     // const setFlowType = useEnrollmentStore((state) => state.setFlowType);
+    
+    const [recentActivities, setRecentActivities] = useState<any[]>([]);
+    const [refreshing, setRefreshing] = useState(false);
+    const [stats, setStats] = useState<any[]>([
+        { label: 'Total Enrolled', value: '...', change: '...' },
+        { label: 'Verified', value: '...', change: '...' },
+        { label: 'Pending', value: '...', change: '...' },
+        { label: 'This Month', value: '...', change: '...' },
+    ]);
+
+    const fetchStats = async () => {
+        try {
+            const data = await getDashboardStats();
+            setStats([
+                { label: 'Total Enrolled', value: data.total.value, change: data.total.change },
+                { label: 'Verified', value: data.verified.value, change: data.verified.change },
+                { label: 'Pending', value: data.pending.value, change: data.pending.change },
+                { label: 'This Month', value: data.thisMonth.value, change: data.thisMonth.change },
+            ]);
+        } catch (error) {
+            console.error('Failed to load stats', error);
+        }
+    };
+
+    const fetchActivities = async () => {
+        try {
+            const logs = await getRecentActivity(5);
+
+            const mappedActivities = logs.map(log => {
+                let icon = 'ellipse';
+                let bgIcon = 'bg-gray-100';
+                let iconColor = '#6B7280';
+                let statusColor = 'text-gray-500';
+                let name = 'System Activity';
+                let type = log.action;
+
+                // Map content based on action
+                if (log.action.includes('ENROLLMENT')) {
+                    icon = 'person-add';
+                    bgIcon = 'bg-blue-100';
+                    iconColor = '#3B82F6';
+                    name = log.details?.employeeName || 'New Enrollment';
+                    type = 'Employee Enrollment';
+                } else if (log.action.includes('VERIFICATION')) {
+                    icon = 'checkmark-circle';
+                    bgIcon = 'bg-green-100';
+                    iconColor = '#10B981';
+                    name = log.details?.employeeName || 'Verification';
+                    type = 'Identity Verified';
+                }
+
+                return {
+                    id: log._id,
+                    name: name,
+                    type: type,
+                    time: formatDistanceToNow(new Date(log.timestamp), { addSuffix: true }),
+                    status: 'Completed',
+                    statusColor: 'text-green-600',
+                    icon,
+                    bgIcon,
+                    iconColor
+                };
+            });
+            setRecentActivities(mappedActivities);
+        } catch (error) {
+            console.error('Failed to load activities', error);
+            // Fallback to dummy if fetch fails? Or just empty.
+            // setRecentActivities(DUMMY_ACTIVITIES.slice(0, 4));
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchActivities();
+            fetchStats();
+        }, [])
+    );
+
+    const onRefresh = React.useCallback(async () => {
+        setRefreshing(true);
+        await Promise.all([fetchActivities(), fetchStats()]);
+        setRefreshing(false);
+    }, []);
 
     const handleLogout = () => {
         logout();
         navigation.replace('Landing');
     };
 
-    const stats = [
-        { label: 'Total Enrolled', value: '1,284', change: '+12.5%' },
-        { label: 'Total Verified', value: '1,284', change: '+12.5%' },
-        { label: 'Total Done', value: '1,284', change: '+12.5%' },
-        { label: 'This Month', value: '86', change: '+8%' },
-        { label: 'Pending', value: '3', change: '0%' },
-        { label: 'Completed', value: '3', change: '0%' },
-    ];
+    // Stats are now state-based - fixed duplicate declaration issue
+    // const stats = [ ... ] // Removed static declaration
 
-    const recentActivities = DUMMY_ACTIVITIES.slice(0, 4);
-
+    // Quick Actions
     const quickActions = [
         {
             icon: <Ionicons name="scan-outline" size={24} color="#10B981" />,
@@ -63,7 +142,13 @@ export default function DashboardScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+            <ScrollView 
+                className="flex-1" 
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                }
+            >
                 {/* Header */}
                 <View className="px-6 pt-6 pb-8 bg-white">
                     <View className="flex-row justify-between items-start mb-6">
@@ -74,29 +159,29 @@ export default function DashboardScreen() {
 
                     </View>
 
-                    {/* Stats Cards */}
-                    <View className="flex-row flex-wrap gap-2">
-                        {stats.map((stat, index) => (
-                            <View
-                                key={index}
-                                className="bg-gray-50 rounded-xl p-3 border border-gray-200"
-                                style={{ width: '31%' }}
-                            >
-                                <Text className="text-[10px] text-gray-500 font-medium mb-1" numberOfLines={1}>{stat.label}</Text>
-                                <Text className="text-lg font-bold text-gray-900 mb-1">{stat.value}</Text>
-                                <Text className={`text-[10px] font-semibold ${stat.change.startsWith('+') ? 'text-green-600' : 'text-gray-400'}`}>
-                                    {stat.change}
-                                </Text>
-                            </View>
-                        ))}
-                    </View>
+                {/* Stats Cards */}
+                <View className="flex-row flex-wrap gap-2">
+                    {stats.map((stat, index) => (
+                        <View
+                            key={index}
+                            className="bg-gray-50 rounded-xl p-3 border border-gray-200"
+                            style={{ width: '31%' }}
+                        >
+                            <Text className="text-[10px] text-gray-500 font-medium mb-1" numberOfLines={1}>{stat.label}</Text>
+                            <Text className="text-lg font-bold text-gray-900 mb-1">{stat.value}</Text>
+                            <Text className={`text-[10px] font-semibold ${stat.change.startsWith('+') ? 'text-green-600' : 'text-gray-400'}`}>
+                                {stat.change}
+                            </Text>
+                        </View>
+                    ))}
+                </View>
                 </View>
 
                 {/* Main Content */}
                 <View className="px-6 py-6">
                     {/* Featured Action */}
                     <View className="mb-6">
-                        <Text className="text-lg font-bold text-gray-900 mb-4">Start Verification</Text>
+                        <Text className="text-lg font-bold text-gray-900 mb-4">Start Enrollment</Text>
                         <TouchableOpacity
                             onPress={() => {
                                 // setFlowType('enroll');
