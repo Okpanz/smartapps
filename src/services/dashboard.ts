@@ -16,10 +16,10 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
             return response.data.data;
         }
         throw new Error('Failed to fetch stats');
-    } catch (error) {
-        console.error('[DashboardService] Error fetching stats:', error);
-        
-        const cachedStats = await databaseService.getAppData<DashboardStats>('dashboard_stats');
+    } catch (error: any) {
+                console.error('[DashboardService] Error fetching stats:', error.message, error.response?.status, JSON.stringify(error.response?.data));
+                
+                const cachedStats = await databaseService.getAppData<DashboardStats>('dashboard_stats');
         if (cachedStats) {
              console.log('[DashboardService] Using cached stats');
              return cachedStats;

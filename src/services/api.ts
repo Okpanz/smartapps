@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 
 // Create axios instance with base configuration
 const api = axios.create({
-    baseURL: EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:7001/api' : 'http://localhost:7001/api'),
+    baseURL: EXPO_PUBLIC_API_URL || 'http://127.0.0.1:7001/api',
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

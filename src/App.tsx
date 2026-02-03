@@ -18,6 +18,7 @@ import { syncPendingEnrollments } from './services/enrollment';
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+    console.log('[App] Rendering Root Component');
     const netInfo = useNetInfo();
 
     React.useEffect(() => {

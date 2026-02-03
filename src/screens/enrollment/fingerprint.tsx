@@ -272,15 +272,28 @@ export default function FingerprintScreen() {
     }, ...);
     */
     
-    const confirmCapture = () => {
+    const confirmCapture = async () => {
         if (reviewState.data) {
-            addFingerprint(reviewState.data);
-            setReviewState({ hasCapture: false, quality: 0, data: null, preview: null });
+            try {
+                // Save base64 to temporary file for upload
+                const timestamp = new Date().getTime();
+                const path = `${RNFS.CachesDirectoryPath}/fingerprint_${currentCount + 1}_${timestamp}.jpg`;
+                
+                await RNFS.writeFile(path, reviewState.data, 'base64');
+                console.log('[Fingerprint] Saved to temp file:', path);
 
-            if (currentCount + 1 >= 3) {
-                showAlert('Success', 'Fingerprint capture completed.', 'success');
-            } else {
-                startScanning();
+                addFingerprint(`file://${path}`);
+                
+                setReviewState({ hasCapture: false, quality: 0, data: null, preview: null });
+
+                if (currentCount + 1 >= 3) {
+                    showAlert('Success', 'Fingerprint capture completed.', 'success');
+                } else {
+                    startScanning();
+                }
+            } catch (error) {
+                console.error('[Fingerprint] Failed to save file:', error);
+                showAlert('Error', 'Failed to save fingerprint. Please try again.', 'error');
             }
         }
     };

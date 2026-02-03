@@ -69,11 +69,15 @@ export const login = async (username: string, password: string): Promise<User> =
         throw new Error(errorMessage);
     } catch (error: any) {
         if (error.response) {
-            console.error('Login Service Error Response:', error.response.status, error.response.data);
+            console.error('[Login Error Response]:', error.response.status, JSON.stringify(error.response.data));
+            throw new Error(`Login failed: ${error.response.data.message || 'Server error'}`);
+        } else if (error.request) {
+            console.error('[Login Error Request]: No response received', error.request);
+             throw new Error('Login failed: Network error - Could not reach server');
         } else {
-            console.error('Login Service Error:', error.message);
+            console.error('[Login Error]:', error.message);
+            throw error;
         }
-        throw error;
     }
 };
 
@@ -95,15 +99,14 @@ export const downloadOfflineRecords = async (
         let hasMore = true;
         let nextCursor: number | null = null;
         
-        let baseURL = 'http://smartpay.test';
+        let baseURL = 'http://127.0.0.1:7001';
         const headers: any = {
             'Accept': 'application/json'
         };
 
 
         if (Platform.OS === 'android') {
-            baseURL = 'http://10.0.2.2'; 
-            headers['Host'] = 'smartpay.test';
+            baseURL = 'http://10.0.2.2:7001'; 
         }
 
         console.log(`[Offline Sync] Starting download for Service ID: ${serviceId}`);
@@ -114,7 +117,7 @@ export const downloadOfflineRecords = async (
             console.log(`[Offline Sync] Fetching batch. Cursor: ${nextCursor} from ${baseURL}`);
             
             // Build URL 
-            let url = `${baseURL}/api/mobile/v1/employees?service_id=${serviceId}&limit=10`; 
+            let url = `${baseURL}/api/verification/download?service_id=${serviceId}&limit=10`; 
             if (nextCursor) { 
                 url += `&cursor=${nextCursor}`; 
             }
@@ -204,19 +207,18 @@ export const downloadOfflineRecords = async (
 export const syncEmployees = async (serviceId: string | number = '234070795'): Promise<void> => {
     try {
         // Handle Android Emulator networking for local domains
-        let baseURL = 'http://smartpay.test';
+        let baseURL = 'http://127.0.0.1:8000';
         const headers: any = {
             'Accept': 'application/json'
         };
 
         if (Platform.OS === 'android') {
-            // Physical Device Deployment (LAN IP)
-            baseURL = 'http://192.168.18.7';
-            headers['Host'] = 'smartpay.test';
+            // Android Emulator Loopback IP (accesses host machine localhost)
+            baseURL = 'http://10.0.2.2:8000';
         }
 
         const url = `${baseURL}/api/mobile/v1/employees?service_id=234070795`;
-        console.log(`[Sync] Fetching employees from ${url} (Host: smartpay.test)`);
+        console.log(`[Sync] Fetching employees from ${url}`);
 
         const response = await axios.get(url, { headers });
 
