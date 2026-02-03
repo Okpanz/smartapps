@@ -39,6 +39,7 @@ yarn-error.*
 *.tsbuildinfo
 
 *.md 
+!README.md
 # generated native folders (tracked in bare workflow)
 # /ios
 # /android
