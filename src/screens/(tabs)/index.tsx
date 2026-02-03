@@ -11,12 +11,22 @@ import { DUMMY_ACTIVITIES } from '../../constants/dummyData';
 import { getRecentActivity, AuditLog } from '../../services/activity';
 import { getDashboardStats } from '../../services/dashboard';
 import { formatDistanceToNow } from 'date-fns';
+import { downloadOfflineRecords } from '../../services/auth';
+import { checkPendingEnrollments, syncPendingEnrollments } from '../../services/enrollment';
 
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
-    const { user, logout } = useAuthStore();
+    const { 
+        user, 
+        logout, 
+        syncStatus, 
+        setSyncStatus, 
+        setLastSyncTime,
+        pendingUploadsCount,
+        uploadStatus 
+    } = useAuthStore();
     // const setFlowType = useEnrollmentStore((state) => state.setFlowType);
     
     const [recentActivities, setRecentActivities] = useState<any[]>([]);
@@ -27,6 +37,38 @@ export default function DashboardScreen() {
         { label: 'Pending', value: '...', change: '...' },
         { label: 'This Month', value: '...', change: '...' },
     ]);
+
+    useEffect(() => {
+        // Check for pending enrollments on mount
+        checkPendingEnrollments();
+    }, []);
+
+    useEffect(() => {
+        const performAutoSync = async () => {
+            // 1. Download Offline Records (if needed)
+            if (user?.service_id && syncStatus === 'idle') {
+                try {
+                    setSyncStatus('syncing');
+                    console.log('[Dashboard] Starting automatic sync (download)...');
+                    await downloadOfflineRecords(undefined, user.service_id);
+                    setSyncStatus('success');
+                    setLastSyncTime(new Date());
+                    console.log('[Dashboard] Automatic download sync completed');
+                } catch (error) {
+                    console.error('[Dashboard] Automatic download sync failed', error);
+                    setSyncStatus('error');
+                }
+            }
+
+            // 2. Upload Pending Enrollments (if any)
+            if (pendingUploadsCount > 0 && uploadStatus === 'idle') {
+                console.log('[Dashboard] Triggering auto-sync for pending uploads...');
+                syncPendingEnrollments();
+            }
+        };
+
+        performAutoSync();
+    }, [user, syncStatus, pendingUploadsCount, uploadStatus]);
 
     const fetchStats = async () => {
         try {
@@ -181,7 +223,7 @@ export default function DashboardScreen() {
                 <View className="px-6 py-6">
                     {/* Featured Action */}
                     <View className="mb-6">
-                        <Text className="text-lg font-bold text-gray-900 mb-4">Start Enrollment</Text>
+                        <Text className="text-lg font-bold text-gray-900 mb-4">Start Verification</Text>
                         <TouchableOpacity
                             onPress={() => {
                                 // setFlowType('enroll');

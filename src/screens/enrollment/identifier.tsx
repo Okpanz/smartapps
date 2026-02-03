@@ -64,7 +64,11 @@ export default function IdentifierScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={1} totalSteps={6} />
+            <EnhancedStepIndicator 
+                currentStep={1} 
+                totalSteps={6} 
+                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+            />
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

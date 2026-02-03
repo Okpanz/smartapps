@@ -339,7 +339,11 @@ export default function FingerprintScreen() {
                 type={toastState.type}
                 onHide={() => setToastState(prev => ({ ...prev, visible: false }))}
             />
-            <EnhancedStepIndicator currentStep={4} totalSteps={6} />
+            <EnhancedStepIndicator 
+                currentStep={4} 
+                totalSteps={6} 
+                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+            />
 
             <View className="flex-1 p-6 items-center">
                 <Text className="text-2xl font-bold text-primary mb-2 text-center">Fingerprint Capture</Text>

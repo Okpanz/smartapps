@@ -130,7 +130,7 @@ export default function LoginScreen() {
         <SafeAreaView className="flex-1 bg-background">
             <View className="flex-1 justify-center p-4">
                 <Card className="p-8 pb-10">
-                    <Text className="text-3xl font-bold text-primary text-center mb-2">Smart Verify</Text>
+                    <Text className="text-3xl font-bold text-primary text-center mb-2">Smart Verification</Text>
                     <Text className="text-base text-gray-600 text-center mb-2">Secure Enrollment Access</Text>
                     <Text className="text-xs text-gray-400 text-center mb-8">v1.1 (Local Version)</Text>
 

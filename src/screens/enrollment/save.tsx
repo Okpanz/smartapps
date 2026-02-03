@@ -89,7 +89,11 @@ export default function SaveScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={6} totalSteps={6} />
+            <EnhancedStepIndicator 
+                currentStep={6} 
+                totalSteps={6} 
+                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+            />
 
             <Animated.ScrollView
                 contentContainerStyle={{ padding: 24 }}

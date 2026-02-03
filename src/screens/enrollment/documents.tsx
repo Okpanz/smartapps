@@ -106,7 +106,11 @@ export default function DocumentUploadScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={3} totalSteps={6} />
+            <EnhancedStepIndicator 
+                currentStep={3} 
+                totalSteps={6} 
+                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+            />
 
             <ScrollView contentContainerStyle={{ padding: 24 }}>
                 <View className="items-center mb-6">

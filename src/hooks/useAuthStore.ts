@@ -5,21 +5,33 @@ import { databaseService } from '../services/database';
 interface AuthState {
     user: User | null;
     isAuthenticated: boolean;
+    syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+    uploadStatus: 'idle' | 'syncing' | 'success' | 'error';
+    lastSyncTime: Date | null;
+    pendingUploadsCount: number;
     login: (user: User) => Promise<void>;
     logout: () => Promise<void>;
     loadUserFromStorage: () => Promise<void>;
+    setSyncStatus: (status: 'idle' | 'syncing' | 'success' | 'error') => void;
+    setUploadStatus: (status: 'idle' | 'syncing' | 'success' | 'error') => void;
+    setLastSyncTime: (time: Date) => void;
+    setPendingUploadsCount: (count: number) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     isAuthenticated: false,
+    syncStatus: 'idle',
+    uploadStatus: 'idle',
+    lastSyncTime: null,
+    pendingUploadsCount: 0,
     login: async (user) => {
         await databaseService.saveAppData('user_profile', user);
         set({ user, isAuthenticated: true });
     },
     logout: async () => {
         await databaseService.saveAppData('user_profile', null);
-        set({ user: null, isAuthenticated: false });
+        set({ user: null, isAuthenticated: false, syncStatus: 'idle', uploadStatus: 'idle', lastSyncTime: null, pendingUploadsCount: 0 });
     },
     loadUserFromStorage: async () => {
         try {
@@ -30,5 +42,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         } catch (error) {
             console.error('[AuthStore] Failed to load user from storage', error);
         }
-    }
+    },
+    setSyncStatus: (status) => set({ syncStatus: status }),
+    setUploadStatus: (status) => set({ uploadStatus: status }),
+    setLastSyncTime: (time) => set({ lastSyncTime: time }),
+    setPendingUploadsCount: (count) => set({ pendingUploadsCount: count }),
 }));

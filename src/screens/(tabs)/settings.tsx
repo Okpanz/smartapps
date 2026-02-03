@@ -14,12 +14,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useNavigation } from '@react-navigation/native';
 import { changePassword, downloadOfflineRecords, createAdhockStaff } from '../../services/auth';
+import { syncPendingEnrollments } from '../../services/enrollment';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { format } from 'date-fns';
 
 export default function SettingsScreen() {
-  const { user, logout, login } = useAuthStore();
+  const { 
+    user, 
+    logout, 
+    login, 
+    syncStatus, 
+    lastSyncTime, 
+    setSyncStatus, 
+    setLastSyncTime,
+    pendingUploadsCount,
+    uploadStatus
+  } = useAuthStore();
   const navigation = useNavigation<any>();
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -87,6 +99,7 @@ export default function SettingsScreen() {
   const handleDownloadOfflineData = async () => {
     try {
       setDownloading(true);
+      setSyncStatus('syncing');
       setDownloadProgress(0);
       
       if (!user?.service_id) {
@@ -98,12 +111,16 @@ export default function SettingsScreen() {
         setDownloadProgress(count);
       }, user.service_id);
       
+      setSyncStatus('success');
+      setLastSyncTime(new Date());
+
       Alert.alert(
         'Download Complete', 
         `Successfully downloaded ${totalCount} employee records for offline use.`
       );
     } catch (error: any) {
       console.error('Download failed', error);
+      setSyncStatus('error');
       Alert.alert('Download Failed', error.message || 'Could not download records');
     } finally {
       setDownloading(false);
@@ -166,6 +183,17 @@ export default function SettingsScreen() {
         }
       }
     ]);
+  };
+
+  const handleSyncPending = async () => {
+    try {
+      await syncPendingEnrollments();
+      if (uploadStatus === 'error') {
+        Alert.alert('Upload Failed', 'Some records could not be synced. Please try again.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to trigger sync');
+    }
   };
 
   return (
@@ -236,43 +264,98 @@ export default function SettingsScreen() {
         {/* OFFLINE DATA */}
         <View className="mb-10">
           <Text className="text-xs font-semibold text-gray-400 mb-3 uppercase">
-            Offline Mode
+            Offline Data
           </Text>
 
-          <View className="bg-white rounded-2xl border border-gray-100 p-4">
-            <View className="flex-row items-center justify-between mb-4">
-               <View className="flex-row items-center flex-1">
-                  <View className="w-10 h-10 rounded-full bg-blue-50 items-center justify-center mr-3">
-                     <Ionicons name="cloud-download-outline" size={20} color="#2563EB" />
-                  </View>
-                  <View>
-                     <Text className="text-base font-medium text-gray-900">Download Records</Text>
-                     <Text className="text-xs text-gray-500">Save employee data for offline search</Text>
-                  </View>
-               </View>
+          {/* Download Records Card */}
+          <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
+            <View className="flex-row items-center mb-4">
+              <View className={`w-10 h-10 rounded-full items-center justify-center mr-3 ${
+                  syncStatus === 'error' ? 'bg-red-50' : 'bg-blue-50'
+              }`}>
+                <Ionicons 
+                  name={syncStatus === 'error' ? "alert-circle-outline" : "cloud-download-outline"} 
+                  size={20} 
+                  color={syncStatus === 'error' ? "#EF4444" : "#2563EB"} 
+                />
+              </View>
+              <View>
+                <Text className="text-base font-medium text-gray-900">
+                  {syncStatus === 'error' ? 'Sync Failed' : 'Offline Records'}
+                </Text>
+                <Text className="text-xs text-gray-500">
+                  {syncStatus === 'success' && lastSyncTime 
+                    ? `Last synced: ${format(lastSyncTime, 'MMM d, h:mm a')}`
+                    : syncStatus === 'error' 
+                      ? 'Automatic sync failed. Please retry.'
+                      : 'Save employee data for offline search'
+                  }
+                </Text>
+              </View>
             </View>
-
-            {downloading && (
-               <View className="mb-4">
-                  <Text className="text-xs text-blue-600 font-medium mb-1 text-center">
-                    Downloading... {downloadProgress} records fetched
-                  </Text>
-                  <ActivityIndicator color="#2563EB" />
-               </View>
-            )}
 
             <TouchableOpacity
               onPress={handleDownloadOfflineData}
-              disabled={downloading}
+              disabled={downloading || syncStatus === 'syncing'}
               className={`rounded-xl py-3 items-center ${
-                downloading ? 'bg-blue-200' : 'bg-blue-600'
+                downloading || syncStatus === 'syncing' ? 'bg-blue-200' : syncStatus === 'error' ? 'bg-red-600' : 'bg-blue-600'
               }`}
             >
               <Text className="text-white font-bold">
-                {downloading ? 'Syncing...' : 'Download Offline Data'}
+                {downloading || syncStatus === 'syncing' 
+                  ? `Syncing... ${downloadProgress > 0 ? `(${downloadProgress})` : ''}`
+                  : syncStatus === 'error' 
+                    ? 'Retry Sync' 
+                    : 'Download Offline Data'
+                }
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Upload Pending Enrollments Card */}
+          <View className="bg-white rounded-2xl border border-gray-100 p-4">
+            <View className="flex-row items-center mb-4">
+                <View className={`w-10 h-10 rounded-full items-center justify-center mr-3 ${
+                    uploadStatus === 'error' ? 'bg-red-50' : 'bg-orange-50'
+                }`}>
+                    <Ionicons 
+                        name={uploadStatus === 'error' ? "alert-circle-outline" : "cloud-upload-outline"} 
+                        size={20} 
+                        color={uploadStatus === 'error' ? "#EF4444" : "#F97316"} 
+                    />
+                </View>
+                <View>
+                    <Text className="text-base font-medium text-gray-900">
+                        Pending Submissions
+                    </Text>
+                    <Text className="text-xs text-gray-500">
+                        {pendingUploadsCount} enrollments waiting to upload
+                    </Text>
+                </View>
+            </View>
+
+            <TouchableOpacity
+                onPress={handleSyncPending}
+                disabled={pendingUploadsCount === 0 || uploadStatus === 'syncing'}
+                className={`rounded-xl py-3 items-center ${
+                    pendingUploadsCount === 0 
+                        ? 'bg-gray-100' 
+                        : uploadStatus === 'error' 
+                            ? 'bg-red-600' 
+                            : 'bg-orange-500'
+                }`}
+            >
+                <Text className={`font-bold ${pendingUploadsCount === 0 ? 'text-gray-400' : 'text-white'}`}>
+                    {uploadStatus === 'syncing' 
+                        ? 'Uploading...' 
+                        : uploadStatus === 'error' 
+                            ? 'Retry Upload' 
+                            : 'Upload Pending Records'
+                    }
+                </Text>
+            </TouchableOpacity>
+          </View>
+
         </View>
 
         {/* SECURITY */}

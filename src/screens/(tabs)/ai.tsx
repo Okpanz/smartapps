@@ -62,7 +62,7 @@ export default function AIScreen() {
     const [messages, setMessages] = useState<Message[]>([
         {
             id: '1',
-            text: 'Welcome to Smart Verify! 👋 I\'m your AI assistant, here to help you with biometric enrollment, answer questions about identity verification, and guide you through the process. How can I assist you today?',
+            text: 'Welcome to Smart Verification! 👋 I\'m your AI assistant, here to help you with biometric enrollment, answer questions about identity verification, and guide you through the process. How can I assist you today?',
             sender: 'ai',
             timestamp: new Date(),
         },

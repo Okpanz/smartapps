@@ -99,37 +99,25 @@ export const downloadOfflineRecords = async (
         let hasMore = true;
         let nextCursor: number | null = null;
         
-        let baseURL = 'http://127.0.0.1:7001';
-        const headers: any = {
-            'Accept': 'application/json'
-        };
-
-
-        if (Platform.OS === 'android') {
-            baseURL = 'http://10.0.2.2:7001'; 
-        }
-
         console.log(`[Offline Sync] Starting download for Service ID: ${serviceId}`);
 
         let totalSaved = 0;
 
         while (hasMore) {
-            console.log(`[Offline Sync] Fetching batch. Cursor: ${nextCursor} from ${baseURL}`);
+            console.log(`[Offline Sync] Fetching batch. Cursor: ${nextCursor}`);
             
-            // Build URL 
-            let url = `${baseURL}/api/verification/download?service_id=${serviceId}&limit=10`; 
-            if (nextCursor) { 
-                url += `&cursor=${nextCursor}`; 
-            }
-
             let retries = 3;
             let response: any;
             
             while (retries > 0) {
                 try {
-                    response = await axios.get(url, { 
-                        headers,
-                        timeout: 30000 // Increase timeout to 30s
+                    response = await api.get('/verification/download', { 
+                        params: {
+                            service_id: serviceId,
+                            limit: 200, // Fetch larger batches for efficiency
+                            cursor: nextCursor
+                        },
+                        timeout: 60000 // Increased timeout to 60s for full download
                     });
                     break; // Success, exit retry loop
                 } catch (err: any) {
@@ -150,10 +138,14 @@ export const downloadOfflineRecords = async (
 
             console.log('[Offline Sync] Response Status:', response.status);
 
-            if (response.data && response.data.status) {
-                const fetchedEmployees = response.data.data.employees || [];
+            const data = response.data;
+            // Support both Laravel 'status' and Node 'success' formats
+            if (data && (data.status || data.success)) {
+                // Handle potential data nesting differences
+                const responseData = data.data || data;
+                const fetchedEmployees = responseData.employees || [];
                 
-                const pagination = response.data.data.pagination;
+                const pagination = responseData.pagination;
                 hasMore = pagination?.has_more || false;
                 nextCursor = pagination?.next_cursor;
 
@@ -183,8 +175,6 @@ export const downloadOfflineRecords = async (
 
                 console.log(`[Offline Sync] Batch processed. Has More: ${hasMore}, Next Cursor: ${nextCursor}`);
                 
-                // FORCE STOP after first batch for testing
-                hasMore = false; 
             } else {
                 console.warn('[Offline Sync] API returned success=false or invalid format');
                 hasMore = false; // Stop on error
@@ -205,6 +195,9 @@ export const downloadOfflineRecords = async (
 };
 
 export const syncEmployees = async (serviceId: string | number = '234070795'): Promise<void> => {
+    // WARNING: This function uses hardcoded URLs and connects directly to Laravel (Port 8000).
+    // It is currently DEPRECATED in favor of downloadOfflineRecords which uses the Node proxy.
+    // Ensure you really want to use this before uncommenting/calling it.
     try {
         // Handle Android Emulator networking for local domains
         let baseURL = 'http://127.0.0.1:8000';

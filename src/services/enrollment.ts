@@ -4,6 +4,7 @@ import axios from 'axios';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { useAuthStore } from '../hooks/useAuthStore';
 
 interface EnrollmentData {
     employeeId: string;
@@ -41,7 +42,7 @@ const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => 
             id: offlineId,
             data: data,
             timestamp: Date.now(),
-            status: 'verified'
+            status: 'pending'
         };
 
         const existingStr = await AsyncStorage.getItem('pendingEnrollments');
@@ -52,10 +53,23 @@ const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => 
         await AsyncStorage.setItem('pendingEnrollments', JSON.stringify(pending));
         console.log(`[Enrollment] Saved offline. Total pending: ${pending.length}`);
         
+        // Update store count
+        useAuthStore.getState().setPendingUploadsCount(pending.length);
+        
         return true;
     } catch (error) {
         console.error('[Enrollment] Failed to save offline:', error);
         throw error;
+    }
+};
+
+export const checkPendingEnrollments = async (): Promise<void> => {
+    try {
+        const existingStr = await AsyncStorage.getItem('pendingEnrollments');
+        const pending = existingStr ? JSON.parse(existingStr) : [];
+        useAuthStore.getState().setPendingUploadsCount(pending.length);
+    } catch (error) {
+        console.error('[Enrollment] Failed to check pending enrollments:', error);
     }
 };
 
@@ -68,9 +82,13 @@ export const syncPendingEnrollments = async (): Promise<void> => {
         if (!existingStr) return;
 
         let pending: OfflineEnrollment[] = JSON.parse(existingStr);
-        if (pending.length === 0) return;
+        if (pending.length === 0) {
+            useAuthStore.getState().setPendingUploadsCount(0);
+            return;
+        }
 
         console.log(`[Enrollment] Syncing ${pending.length} pending enrollments...`);
+        useAuthStore.getState().setUploadStatus('syncing');
 
         const remaining: OfflineEnrollment[] = [];
 
@@ -82,16 +100,27 @@ export const syncPendingEnrollments = async (): Promise<void> => {
             } catch (error) {
                 console.error(`[Enrollment] Failed to sync ${entry.id}:`, error);
                 // Keep it in the list if it failed
-                // Optional: Add retry count logic here to avoid infinite loops
                 remaining.push(entry);
             }
         }
 
         await AsyncStorage.setItem('pendingEnrollments', JSON.stringify(remaining));
+        
+        // Update store
+        useAuthStore.getState().setPendingUploadsCount(remaining.length);
+        
+        if (remaining.length === 0) {
+            useAuthStore.getState().setUploadStatus('success');
+            setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
+        } else {
+            useAuthStore.getState().setUploadStatus('error');
+        }
+        
         console.log(`[Enrollment] Sync complete. Remaining pending: ${remaining.length}`);
 
     } catch (error) {
         console.error('[Enrollment] Sync error:', error);
+        useAuthStore.getState().setUploadStatus('error');
     }
 };
 
@@ -248,8 +277,13 @@ export const submitEnrollment = async (data: EnrollmentData): Promise<boolean> =
             console.log('[Enrollment] Offline mode detected. Saving to local storage.');
             return await saveEnrollmentOffline(data);
         } else {
-            console.log('[Enrollment] Online mode detected. Uploading directly.');
-            return await uploadEnrollmentToApi(data);
+            console.log('[Enrollment] Online mode detected. Attempting upload.');
+            try {
+                return await uploadEnrollmentToApi(data);
+            } catch (uploadError) {
+                console.warn('[Enrollment] Upload failed (likely timeout/server error). Falling back to offline save.', uploadError);
+                return await saveEnrollmentOffline(data);
+            }
         }
 
     } catch (error: any) {
