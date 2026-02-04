@@ -177,9 +177,12 @@ export default function SettingsScreen() {
       {
         text: 'Log Out',
         style: 'destructive',
-        onPress: () => {
-          logout();
-          navigation.replace('Landing');
+        onPress: async () => {
+          await logout();
+          navigation.getParent()?.reset({
+            index: 0,
+            routes: [{ name: 'Landing' }],
+          });
         }
       }
     ]);

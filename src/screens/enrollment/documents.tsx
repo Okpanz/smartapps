@@ -22,11 +22,13 @@ const documentSchema = z.object({
 type DocumentForm = z.infer<typeof documentSchema>;
 
 const DOCUMENT_TYPES = [
-    { label: 'ID Card', value: 'ID_CARD', icon: 'card-outline' },
-    { label: 'Appointment Letter', value: 'APPOINTMENT_LETTER', icon: 'document-text-outline' },
-    { label: 'Offer Letter', value: 'OFFER_LETTER', icon: 'mail-outline' },
-    { label: 'Promotion Letter', value: 'PROMOTION_LETTER', icon: 'trending-up-outline' },
-    { label: 'Other', value: 'OTHER', icon: 'ellipsis-horizontal-outline' },
+    // { label: 'ID Card', value: 'ID_CARD', icon: 'card-outline' },
+    { label: 'First Appointment Letter', value: 'FIRST_APPOINTMENT_LETTER', icon: 'document-text-outline' },
+    { label: 'Confirmation Letter', value: 'CONFIRMATION_LETTER', icon: 'mail-outline' },
+    { label: 'BVN', value: 'BVN', icon: 'mail-outline' },
+    { label: 'Last Promotion Letter', value: 'LAST_PROMOTION_LETTER', icon: 'trending-up-outline' },
+    { label: 'Birth Cert', value: 'BIRTH_CERTIFICATE', icon: 'trending-up-outline' },
+    { label: 'Highest Academic Qualification', value: 'HIGHEST_ACADEMIC_QUALIFICATION', icon: 'card-outline' },
 ];
 
 export default function DocumentUploadScreen() {

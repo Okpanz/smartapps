@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { User } from '../services/auth';
 import { databaseService } from '../services/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface AuthState {
     user: User | null;
@@ -30,7 +31,18 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ user, isAuthenticated: true });
     },
     logout: async () => {
-        await databaseService.saveAppData('user_profile', null);
+        try {
+            await databaseService.saveAppData('user_profile', null);
+        } catch (e) {
+            console.error('[AuthStore] Failed to clear user profile from DB', e);
+        }
+
+        try {
+            await AsyncStorage.multiRemove(['userToken', 'userData', 'employeesData']);
+        } catch (e) {
+            console.error('[AuthStore] Failed to clear AsyncStorage', e);
+        }
+
         set({ user: null, isAuthenticated: false, syncStatus: 'idle', uploadStatus: 'idle', lastSyncTime: null, pendingUploadsCount: 0 });
     },
     loadUserFromStorage: async () => {

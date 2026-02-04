@@ -32,10 +32,13 @@ export const login = async (username: string, password: string): Promise<User> =
         console.log('Login Response:', JSON.stringify(response.data, null, 2));
 
         if (response.data.success && response.data.data && response.data.data.token) {
-            const { token, user } = response.data.data;
+            const { token, refreshToken, user } = response.data.data;
 
             // Store token for subsequent requests
             await AsyncStorage.setItem('userToken', token);
+            if (refreshToken) {
+                await AsyncStorage.setItem('refreshToken', refreshToken);
+            }
             
             const { id, ...rest } = user;
             const userData = {
@@ -83,8 +86,59 @@ export const login = async (username: string, password: string): Promise<User> =
 
 export const logout = async (): Promise<void> => {
     await AsyncStorage.removeItem('userToken');
+    await AsyncStorage.removeItem('refreshToken');
     await AsyncStorage.removeItem('userData');
     await AsyncStorage.removeItem('employeesData');
+};
+
+export const biometricLogin = async (): Promise<User> => {
+    try {
+        const refreshToken = await AsyncStorage.getItem('refreshToken');
+        if (!refreshToken) {
+            throw new Error('No refresh token available');
+        }
+
+        const response = await api.post<LoginResponse>('/auth/refresh-token', {
+            refreshToken
+        });
+
+        if (response.data.success && response.data.data && response.data.data.token) {
+            const { token, refreshToken: newRefreshToken, user } = response.data.data;
+
+            await AsyncStorage.setItem('userToken', token);
+            if (newRefreshToken) {
+                await AsyncStorage.setItem('refreshToken', newRefreshToken);
+            }
+
+            const { id, ...rest } = user;
+            const userData = {
+                ...rest,
+                id: String(id),
+                username: user.email,
+                name: user.name,
+                email: user.email,
+            };
+
+            await AsyncStorage.setItem('userData', JSON.stringify(userData));
+            return userData;
+        }
+        
+        throw new Error('Biometric login failed');
+    } catch (error: any) {
+        console.error('Biometric login error:', error);
+        
+        // Handle Offline Fallback
+        if (error.request || error.message === 'Network Error' || error.code === 'ECONNABORTED') {
+            console.log('Network error detected during biometric login, attempting offline fallback...');
+            const userDataStr = await AsyncStorage.getItem('userData');
+            if (userDataStr) {
+                const userData = JSON.parse(userDataStr);
+                return userData;
+            }
+        }
+        
+        throw error;
+    }
 };
 
 export const downloadOfflineRecords = async (

@@ -4,8 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 // Create axios instance with base configuration
+const BASE_URL = EXPO_PUBLIC_API_URL || 'https://smart-verify-server.onrender.com/api';
+
 const api = axios.create({
-    baseURL: EXPO_PUBLIC_API_URL || 'http://127.0.0.1:7001/api',
+    baseURL: BASE_URL,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
