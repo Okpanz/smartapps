@@ -1,7 +1,7 @@
 // Only log real errors, not anticipated retry cycles
 
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Alert, Platform, ActivityIndicator, Modal, FlatList, PermissionsAndroid, ScrollView, Share } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, ActivityIndicator, Modal, FlatList, PermissionsAndroid, ScrollView, Share } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import RNFS from 'react-native-fs';
@@ -15,13 +15,14 @@ import { FingerprintImage } from '../../components/ui/FingerprintImage';
 import { Toast, ToastType } from '../../components/ui/Toast';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { externalScanner, UsbDevice } from '../../services/externalScanner';
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function FingerprintScreen() {
     // Local definition to avoid import issues and linter errors
     // type ScannerStatus = 'DISCONNECTED' | 'CONNECTING' | 'INITIALIZING' | 'CONNECTED' | 'SCANNING' | 'ERROR';
 
     const navigation = useNavigation<any>();
-    const { addFingerprint, fingerprints } = useEnrollmentStore();
+    const { addFingerprint, fingerprints, setSkippedFingerprint, skippedFingerprint } = useEnrollmentStore();
 
     const [scannerStatus, setScannerStatus] = useState<string>('DISCONNECTED');
     const [isInitializing, setIsInitializing] = useState(false);
@@ -51,16 +52,42 @@ export default function FingerprintScreen() {
         title: string;
         message: string;
         type: AlertType;
+        confirmText?: string;
         onConfirm?: () => void;
+        showCancel?: boolean;
+        cancelText?: string;
+        onCancel?: () => void;
     }>({
         visible: false,
         title: '',
         message: '',
-        type: 'info'
+        type: 'info',
+        showCancel: false
     });
 
-    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
-        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    const showAlert = (
+        title: string, 
+        message: string, 
+        type: AlertType = 'info', 
+        onConfirm?: () => void,
+        options?: {
+            confirmText?: string;
+            showCancel?: boolean;
+            cancelText?: string;
+            onCancel?: () => void;
+        }
+    ) => {
+        setAlertConfig({ 
+            visible: true, 
+            title, 
+            message, 
+            type, 
+            onConfirm,
+            confirmText: options?.confirmText,
+            showCancel: options?.showCancel,
+            cancelText: options?.cancelText,
+            onCancel: options?.onCancel
+        });
     };
 
     const hideAlert = () => {
@@ -71,7 +98,7 @@ export default function FingerprintScreen() {
     const scrollViewRef = useRef<ScrollView>(null);
 
     const currentCount = fingerprints.length;
-    const isComplete = currentCount >= 3;
+    const isComplete = currentCount >= 2 || skippedFingerprint;
 
     const [countdown, setCountdown] = useState<number | null>(null);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -170,7 +197,7 @@ export default function FingerprintScreen() {
             console.error("Start scan failed:", err);
             setIsScanning(false);
             scanStatusRef.current = 'idle';
-            Alert.alert("Scan Error", "Failed to start scanning: " + err.message);
+            showAlert("Scan Error", "Failed to start scanning: " + err.message, 'error');
         }
     };
 
@@ -196,7 +223,7 @@ export default function FingerprintScreen() {
                 data: finalImage,
                 preview: null
             });
-            Alert.alert('Success', 'Fingerprint captured successfully.');
+            showAlert('Success', 'Fingerprint captured successfully.', 'success');
         } else {
             scanStatusRef.current = 'idle';
         }
@@ -211,7 +238,7 @@ export default function FingerprintScreen() {
             console.log(`FingerprintScreen: Found ${deviceList.length} devices`);
 
             if (deviceList.length === 0) {
-                Alert.alert("No Devices", "No USB scanners found. Please check your connection and ensure OTG is enabled.");
+                showAlert("No Devices", "No USB scanners found. Please check your connection and ensure OTG is enabled.", 'warning');
             } else if (deviceList.length === 1) {
                 // Auto-connect if only one
                 console.log(`FingerprintScreen: Auto-connecting to ${deviceList[0].deviceName}`);
@@ -223,7 +250,7 @@ export default function FingerprintScreen() {
             }
         } catch (error) {
             console.error("FingerprintScreen: Search error", error);
-            Alert.alert("Error", "Failed to search for devices.");
+            showAlert("Error", "Failed to search for devices.", 'error');
         } finally {
             setIsSearching(false);
         }
@@ -252,14 +279,14 @@ export default function FingerprintScreen() {
                 // Start scanning immediately
                 startScanning();
                 
-                Alert.alert('Scanner Connected', 'External fingerprint scanner is ready.');
+                showAlert('Scanner Connected', 'External fingerprint scanner is ready.', 'success');
             } else {
                 setScannerStatus('DISCONNECTED');
             }
-        } catch (error) {
+        } catch (error: any) {
             setScannerStatus('ERROR');
             setIsInitializing(false);
-            Alert.alert('Connection Failed', 'Could not connect to external scanner.');
+            showAlert('Connection Failed', error.message || 'Could not connect to external scanner.', 'error');
         }
     };
 
@@ -286,7 +313,7 @@ export default function FingerprintScreen() {
                 
                 setReviewState({ hasCapture: false, quality: 0, data: null, preview: null });
 
-                if (currentCount + 1 >= 3) {
+                if (currentCount + 1 >= 2) {
                     showAlert('Success', 'Fingerprint capture completed.', 'success');
                 } else {
                     startScanning();
@@ -309,7 +336,7 @@ export default function FingerprintScreen() {
 
     const handleCopyLogs = async () => {
         if (logs.length === 0) {
-            Alert.alert('No Logs', 'There are no logs to copy.');
+            showAlert('No Logs', 'There are no logs to copy.', 'info');
             return;
         }
         try {
@@ -319,7 +346,7 @@ export default function FingerprintScreen() {
             });
         } catch (error) {
             console.error('Error sharing logs:', error);
-            Alert.alert('Error', 'Failed to share logs');
+            showAlert('Error', 'Failed to share logs', 'error');
         }
     };
 
@@ -345,10 +372,13 @@ export default function FingerprintScreen() {
                 stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
             />
 
-            <View className="flex-1 p-6 items-center">
+            <ScrollView 
+                className="flex-1" 
+                contentContainerStyle={{ flexGrow: 1, alignItems: 'center', padding: isSmallDevice ? 16 : 24, paddingBottom: 40 }}
+            >
                 <Text className="text-2xl font-bold text-primary mb-2 text-center">Fingerprint Capture</Text>
                 <Text className="text-base text-gray-500 text-center mb-6">
-                    Use the external scanner to capture 3 fingerprints.
+                    Use the external scanner to capture 2 fingerprints.
                 </Text>
 
                 {/* Scanner Status Indicator */}
@@ -371,8 +401,8 @@ export default function FingerprintScreen() {
 
                 <Card className="w-full mb-8 py-6 px-4 bg-primary/5 border border-primary/20">
                     <Text className="text-sm font-medium text-gray-900 mb-2">Capture Progress</Text>
-                    <ProgressBar progress={currentCount / 3} />
-                    <Text className="text-xs text-gray-500 self-end mt-2 font-medium">{currentCount} / 3 Scans</Text>
+                    <ProgressBar progress={currentCount / 2} />
+                    <Text className="text-xs text-gray-500 self-end mt-2 font-medium">{currentCount} / 2 Scans</Text>
                 </Card>
 
                 {scannerStatus !== 'CONNECTED' && scannerStatus !== 'INITIALIZING' ? (
@@ -429,8 +459,14 @@ export default function FingerprintScreen() {
                 ) : (
                     isComplete ? (
                         <View className="w-60 h-60 rounded-full bg-primary/10 border-2 border-solid border-primary justify-center items-center shadow-sm mb-10">
-                            <Ionicons name="checkmark-circle" size={80} color="#007AFF" />
-                            <Text className="text-primary mt-4 font-semibold text-lg">Capture Complete</Text>
+                            <Ionicons 
+                                name={skippedFingerprint ? "alert-circle-outline" : "checkmark-circle"} 
+                                size={80} 
+                                color={skippedFingerprint ? "#F97316" : "#007AFF"} 
+                            />
+                            <Text className={`mt-4 font-semibold text-lg ${skippedFingerprint ? "text-orange-500" : "text-primary"}`}>
+                                {skippedFingerprint ? "Capture Skipped" : "Capture Complete"}
+                            </Text>
                         </View>
                     ) : (
                         <View className="w-60 h-60 rounded-2xl bg-white border-2 border-solid border-primary/60 justify-center items-center shadow-lg relative overflow-hidden mb-10">
@@ -540,7 +576,42 @@ export default function FingerprintScreen() {
                         </View>
                     </View>
                 </Modal>
-            </View>
+                <View className="px-6 py-4">
+                    <Button
+                        title="Skip Fingerprint Capture"
+                        variant="text"
+                        onPress={() => {
+                            showAlert(
+                                'Skip Fingerprint?',
+                                'Are you sure you want to skip fingerprint capture? You can add it later.',
+                                'warning',
+                                () => {
+                                    setSkippedFingerprint(true);
+                                    navigation.navigate('Face');
+                                },
+                                {
+                                    confirmText: 'Skip',
+                                    showCancel: true,
+                                    cancelText: 'Cancel'
+                                }
+                            );
+                        }}
+                    />
+                </View>
+                
+                <CustomAlert
+                    visible={alertConfig.visible}
+                    title={alertConfig.title}
+                    message={alertConfig.message}
+                    type={alertConfig.type}
+                    onClose={hideAlert}
+                    onConfirm={alertConfig.onConfirm}
+                    confirmText={alertConfig.confirmText}
+                    showCancel={alertConfig.showCancel}
+                    cancelText={alertConfig.cancelText}
+                    onCancel={alertConfig.onCancel}
+                />
+            </ScrollView>
         </SafeAreaView>
     );
 }

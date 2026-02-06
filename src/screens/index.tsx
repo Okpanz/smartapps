@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,6 +13,8 @@ import { useAuthStore } from '../hooks/useAuthStore';
 import ReactNativeBiometrics from 'react-native-biometrics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { CustomAlert, AlertType } from '../components/ui/CustomAlert';
+import { isSmallDevice } from '../utils/responsive';
 
 const loginSchema = z.object({
     username: z.string().email('Please enter a valid email address'),
@@ -35,6 +37,27 @@ export default function LoginScreen() {
     const [isLocked, setIsLocked] = useState(false);
     const [biometricPrompted, setBiometricPrompted] = useState(false);
     
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        type: AlertType;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
+        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig(prev => ({ ...prev, visible: false }));
+    };
+
     const rnBiometrics = new ReactNativeBiometrics();
 
     const { control, handleSubmit, setValue, formState: { errors } } = useForm<LoginForm>({
@@ -101,7 +124,7 @@ export default function LoginScreen() {
                     navigation.replace('Tabs');
                 } catch (apiError) {
                     console.error('Biometric backend auth failed', apiError);
-                    Alert.alert('Login Failed', 'Session expired or network unavailable. Please login with password.');
+                    showAlert('Login Failed', 'Session expired or network unavailable. Please login with password.', 'error');
                 } finally {
                     setLoading(false);
                 }
@@ -121,7 +144,7 @@ export default function LoginScreen() {
 
     const onSubmit = async (data: LoginForm) => {
         if (!data.username || !data.username.trim() || !data.password || !data.password.trim()) {
-             Alert.alert('Validation Error', 'Please enter both email and password.');
+             showAlert('Validation Error', 'Please enter both email and password.', 'warning');
              return;
         }
 
@@ -140,7 +163,7 @@ export default function LoginScreen() {
         } catch (error: any) {
             console.error('Login error:', error);
             const message = error.response?.data?.message || error.message || 'An error occurred';
-            Alert.alert('Login Failed', message);
+            showAlert('Login Failed', message, 'error');
         } finally {
             setLoading(false);
         }
@@ -154,9 +177,16 @@ export default function LoginScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <View className="flex-1 justify-center p-4">
-                <Card className="p-8 pb-10">
-                    <Text className="text-3xl font-bold text-primary text-center mb-2">Smart Verification</Text>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                className="flex-1"
+            >
+                <ScrollView 
+                    contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: isSmallDevice ? 12 : 16, paddingBottom: 40 }}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    <Card className={isSmallDevice ? "p-5 pb-6" : "p-8 pb-10"}>
+                        <Text className="text-3xl font-bold text-primary text-center mb-2">Smart Verification</Text>
                     
                     {isLocked && user ? (
                         <View className="mb-8">
@@ -226,7 +256,24 @@ export default function LoginScreen() {
                         </TouchableOpacity>
                     )}
                 </Card>
-            </View>
+
+                <View className="mt-6 flex-row justify-center">
+                    <Text className="text-gray-500">Need help? </Text>
+                    <TouchableOpacity>
+                        <Text className="text-primary font-medium">Contact Support</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <CustomAlert
+                    visible={alertConfig.visible}
+                    title={alertConfig.title}
+                    message={alertConfig.message}
+                    type={alertConfig.type}
+                    onClose={hideAlert}
+                    onConfirm={alertConfig.onConfirm}
+                />
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }

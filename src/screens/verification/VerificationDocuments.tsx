@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from 'react-hook-form';
@@ -14,6 +14,8 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
+import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
+import { isSmallDevice } from '../../utils/responsive';
 
 const documentSchema = z.object({
     type: z.string().min(1, 'Document type is required'),
@@ -23,11 +25,12 @@ const documentSchema = z.object({
 type DocumentForm = z.infer<typeof documentSchema>;
 
 const DOCUMENT_TYPES = [
-    { label: 'ID Card', value: 'ID_CARD', icon: 'card-outline' },
-    { label: 'Appointment Letter', value: 'APPOINTMENT_LETTER', icon: 'document-text-outline' },
-    { label: 'Offer Letter', value: 'OFFER_LETTER', icon: 'mail-outline' },
-    { label: 'Promotion Letter', value: 'PROMOTION_LETTER', icon: 'trending-up-outline' },
-    { label: 'Other', value: 'OTHER', icon: 'ellipsis-horizontal-outline' },
+  { label: 'First Appointment Letter', value: 'FIRST_APPOINTMENT_LETTER', icon: 'document-text-outline' },
+    { label: 'Confirmation Letter', value: 'CONFIRMATION_LETTER', icon: 'mail-outline' },
+    { label: 'BVN', value: 'BVN', icon: 'mail-outline' },
+    { label: 'Last Promotion Letter', value: 'LAST_PROMOTION_LETTER', icon: 'trending-up-outline' },
+    { label: 'Birth Cert', value: 'BIRTH_CERTIFICATE', icon: 'trending-up-outline' },
+    { label: 'Highest Academic Qualification', value: 'HIGHEST_ACADEMIC_QUALIFICATION', icon: 'card-outline' },
 ];
 
 export default function VerificationDocumentsScreen() {
@@ -41,6 +44,27 @@ export default function VerificationDocumentsScreen() {
     
     const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        type: AlertType;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
+        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig(prev => ({ ...prev, visible: false }));
+    };
 
     const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<DocumentForm>({
         resolver: zodResolver(documentSchema),
@@ -68,13 +92,13 @@ export default function VerificationDocumentsScreen() {
             }
         } catch (err) {
             console.error("Scanner Error:", err);
-            Alert.alert('Error', 'Failed to scan document: ' + (err instanceof Error ? err.message : String(err)));
+            showAlert('Error', 'Failed to scan document: ' + (err instanceof Error ? err.message : String(err)), 'error');
         }
     };
 
     const onSubmit = async (data: DocumentForm) => {
         if (!selectedFile) {
-            Alert.alert('No document selected', 'Please capture or upload a document.');
+            showAlert('No document selected', 'Please capture or upload a document.', 'warning');
             return;
         }
 
@@ -90,12 +114,12 @@ export default function VerificationDocumentsScreen() {
             };
 
             addDocument(newDoc);
-            Alert.alert('Success', 'Document added successfully');
+            showAlert('Success', 'Document added successfully', 'success');
             setSelectedFile(null);
             setValue('type', '');
             setValue('otherLabel', '');
         } catch (error) {
-            Alert.alert('Error', 'Failed to save document');
+            showAlert('Error', 'Failed to save document', 'error');
         } finally {
             setIsUploading(false);
         }
@@ -105,7 +129,7 @@ export default function VerificationDocumentsScreen() {
         if (!employee) return;
 
         if (documents.length === 0) {
-            Alert.alert('No Documents', 'Please add at least one document before finishing.');
+            showAlert('No Documents', 'Please add at least one document before finishing.', 'warning');
             return;
         }
 
@@ -119,23 +143,21 @@ export default function VerificationDocumentsScreen() {
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
             });
 
-            Alert.alert(
+            showAlert(
                 'Verification Complete', 
                 'Documents have been uploaded successfully.', 
-                [{ 
-                    text: 'Return Home', 
-                    onPress: () => {
-                        // Reset the root navigator to Tabs to clear the stack
-                        navigation.getParent()?.reset({
-                            index: 0,
-                            routes: [{ name: 'Tabs' }],
-                        });
-                    }
-                }]
+                'success',
+                () => {
+                    // Reset the root navigator to Tabs to clear the stack
+                    navigation.getParent()?.reset({
+                        index: 0,
+                        routes: [{ name: 'Tabs' }],
+                    });
+                }
             );
         } catch (error) {
             console.error('Upload Error:', error);
-            Alert.alert('Error', 'Failed to upload documents. Please try again.');
+            showAlert('Error', 'Failed to upload documents. Please try again.', 'error');
         } finally {
             setIsUploading(false);
         }
@@ -145,7 +167,7 @@ export default function VerificationDocumentsScreen() {
         <SafeAreaView className="flex-1 bg-background">
             <EnhancedStepIndicator currentStep={3} totalSteps={3} stepLabels={stepLabels} />
 
-            <ScrollView contentContainerStyle={{ padding: 24 }}>
+            <ScrollView contentContainerStyle={{ padding: isSmallDevice ? 16 : 24, paddingBottom: 40 }}>
                 <View className="items-center mb-6">
                     <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-4">
                         <Ionicons name="cloud-upload-outline" size={32} color="#10B981" />
@@ -158,7 +180,7 @@ export default function VerificationDocumentsScreen() {
 
                 {/* Upload Status / List */}
                 {documents.length > 0 && (
-                    <Card className="p-4 mb-6 border-primary/20 bg-primary/5">
+                    <Card className={isSmallDevice ? "p-4 mb-4 border-primary/20 bg-primary/5" : "p-4 mb-6 border-primary/20 bg-primary/5"}>
                         <Text className="text-sm font-semibold text-primary mb-3">Uploaded Documents ({documents.length})</Text>
                         {documents.map((doc, index) => (
                             <View key={doc.id} className="flex-row items-center justify-between py-2 border-b border-gray-100 last:border-0">
@@ -176,30 +198,36 @@ export default function VerificationDocumentsScreen() {
                     </Card>
                 )}
 
-                <Card className="p-6 mb-6">
+                <Card className={isSmallDevice ? "p-4 mb-6" : "p-6 mb-6"}>
                     <Text className="text-sm font-medium text-gray-700 mb-3">Select Document Type</Text>
                     <View className="flex-row flex-wrap gap-2 mb-4">
-                        {DOCUMENT_TYPES.map((type) => (
-                            <TouchableOpacity
-                                key={type.value}
-                                onPress={() => setValue('type', type.value)}
-                                className={`
-                                    flex-row items-center px-4 py-2.5 rounded-full border
-                                    ${selectedType === type.value
-                                        ? 'bg-primary border-primary'
-                                        : 'bg-white border-gray-200'}
-                                `}
-                            >
-                                <Ionicons
-                                    name={type.icon as any}
-                                    size={18}
-                                    color={selectedType === type.value ? 'white' : '#6B7280'}
-                                />
-                                <Text className={`ml-2 text-sm font-medium ${selectedType === type.value ? 'text-white' : 'text-gray-600'}`}>
-                                    {type.label}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
+                        {DOCUMENT_TYPES.map((type) => {
+                            const isUploaded = documents.some(doc => doc.type === type.value);
+                            return (
+                                <TouchableOpacity
+                                    key={type.value}
+                                    onPress={() => !isUploaded && setValue('type', type.value)}
+                                    disabled={isUploaded}
+                                    className={`
+                                        flex-row items-center px-4 py-2.5 rounded-full border
+                                        ${selectedType === type.value
+                                            ? 'bg-primary border-primary'
+                                            : isUploaded
+                                                ? 'bg-gray-100 border-gray-200 opacity-50'
+                                                : 'bg-white border-gray-200'}
+                                    `}
+                                >
+                                    <Ionicons
+                                        name={isUploaded ? 'checkmark-circle' : type.icon as any}
+                                        size={18}
+                                        color={selectedType === type.value ? 'white' : isUploaded ? '#10B981' : '#6B7280'}
+                                    />
+                                    <Text className={`ml-2 text-sm font-medium ${selectedType === type.value ? 'text-white' : isUploaded ? 'text-gray-400' : 'text-gray-600'}`}>
+                                        {type.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
                     </View>
 
                     {selectedType === 'OTHER' && (
@@ -258,17 +286,20 @@ export default function VerificationDocumentsScreen() {
                 </Card>
 
                 <Button
-                    title="Finish & Return Home"
+                    title="Complete Verification"
                     onPress={handleFinish}
-                    variant={documents.length > 0 ? "filled" : "outlined"}
-                    className="mt-2"
+                    disabled={isUploading || documents.length === 0}
+                    loading={isUploading}
+                    className="mt-6 mb-8"
                 />
 
-                <Button
-                    title="Back"
-                    onPress={() => navigation.goBack()}
-                    variant="text"
-                    className="mt-2"
+                <CustomAlert
+                    visible={alertConfig.visible}
+                    title={alertConfig.title}
+                    message={alertConfig.message}
+                    type={alertConfig.type}
+                    onClose={hideAlert}
+                    onConfirm={alertConfig.onConfirm}
                 />
             </ScrollView>
         </SafeAreaView>

@@ -1,4 +1,4 @@
-import { View, Text, Image, TouchableOpacity, Alert, TouchableWithoutFeedback, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, TouchableWithoutFeedback, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor, useCameraFormat } from 'react-native-vision-camera';
 import { useFaceDetector, Face } from 'react-native-vision-camera-face-detector';
@@ -9,6 +9,8 @@ import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import React from 'react';
+import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function FaceCaptureScreen() {
     const navigation = useNavigation<any>();
@@ -32,6 +34,34 @@ export default function FaceCaptureScreen() {
         performanceMode: 'fast',
         contourMode: 'none'
     });
+
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        type: AlertType;
+        confirmText?: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const showAlert = (
+        title: string, 
+        message: string, 
+        type: AlertType = 'info', 
+        onConfirm?: () => void,
+        confirmText?: string
+    ) => {
+        setAlertConfig({ visible: true, title, message, type, onConfirm, confirmText });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig(prev => ({ ...prev, visible: false }));
+    };
 
     const handleFacesDetected = Worklets.createRunOnJS((detectedFaces: Face[]) => {
         setFaces(detectedFaces);
@@ -81,7 +111,7 @@ export default function FaceCaptureScreen() {
                     setPreview(`file://${photo.path}`);
                 }
             } catch (e) {
-                Alert.alert('Error', 'Failed to take or process picture.');
+                showAlert('Error', 'Failed to take or process picture.', 'error');
                 console.error(e);
             } finally {
                 setIsProcessing(false);
@@ -120,7 +150,7 @@ export default function FaceCaptureScreen() {
                 stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
             />
 
-            <View className="flex-1 p-6">
+            <View className={isSmallDevice ? "flex-1 p-4" : "flex-1 p-6"}>
                 <Text className="text-2xl font-bold text-primary mb-2 text-center">Facial Capture</Text>
                 <Text className="text-base text-gray-500 text-center mb-6">
                     {isComplete
@@ -217,6 +247,16 @@ export default function FaceCaptureScreen() {
                     className="mb-2"
                 />
             </View>
+
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+                onClose={hideAlert}
+                onConfirm={alertConfig.onConfirm}
+                confirmText={alertConfig.confirmText}
+            />
         </SafeAreaView>
     );
 }

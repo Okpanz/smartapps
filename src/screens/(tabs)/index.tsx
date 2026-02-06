@@ -15,6 +15,7 @@ import { downloadOfflineRecords } from '../../services/auth';
 import { checkPendingEnrollments, syncPendingEnrollments } from '../../services/enrollment';
 
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
@@ -207,7 +208,7 @@ export default function DashboardScreen() {
                         <View
                             key={index}
                             className="bg-gray-50 rounded-xl p-3 border border-gray-200"
-                            style={{ width: '31%' }}
+                            style={{ width: isSmallDevice ? '48%' : '31%' }}
                         >
                             <Text className="text-[10px] text-gray-500 font-medium mb-1" numberOfLines={1}>{stat.label}</Text>
                             <Text className="text-lg font-bold text-gray-900 mb-1">{stat.value}</Text>

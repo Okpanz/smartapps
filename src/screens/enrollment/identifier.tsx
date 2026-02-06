@@ -1,11 +1,10 @@
-import { View, Text, KeyboardAvoidingView, Platform, ScrollView, Alert, Animated } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useState } from 'react';
 
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -14,6 +13,8 @@ import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator
 import { verifyIdentifier } from '../../services/verification';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
+import { isSmallDevice } from '../../utils/responsive';
 
 const identifierSchema = z.object({
     identifier: z.string()
@@ -32,6 +33,27 @@ export default function IdentifierScreen() {
     
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
+
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        type: AlertType;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
+        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig(prev => ({ ...prev, visible: false }));
+    };
 
     const { control, handleSubmit, formState: { errors } } = useForm<IdentifierForm>({
         resolver: zodResolver(identifierSchema),
@@ -56,7 +78,7 @@ export default function IdentifierScreen() {
             setEmployee(employee);
             navigation.navigate('Details'); // No need to pass flow params anymore
         } catch (error: any) {
-            Alert.alert('Verification Failed', error.message || 'Invalid Identifier');
+            showAlert('Verification Failed', error.message || 'Invalid Identifier', 'error');
         } finally {
             setLoading(false);
         }
@@ -64,6 +86,14 @@ export default function IdentifierScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+                onClose={hideAlert}
+                onConfirm={alertConfig.onConfirm}
+            />
             <EnhancedStepIndicator 
                 currentStep={1} 
                 totalSteps={6} 
@@ -75,7 +105,7 @@ export default function IdentifierScreen() {
                 style={{ flex: 1 }}
             >
                 <Animated.ScrollView
-                    contentContainerStyle={{ padding: 24 }}
+                    contentContainerStyle={{ padding: isSmallDevice ? 16 : 24, paddingBottom: 40 }}
                     style={{ opacity: fadeAnim }}
                 >
                     {/* Header with Icon */}
@@ -89,7 +119,7 @@ export default function IdentifierScreen() {
                         </Text>
                     </View>
 
-                    <Card className="p-6">
+                    <Card className={isSmallDevice ? "p-4" : "p-6"}>
                         <Input
                             label="Identifier / Account Number"
                             name="identifier"

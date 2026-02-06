@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Alert,
   ActivityIndicator,
   Switch,
   Modal
@@ -19,6 +18,8 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
+import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function SettingsScreen() {
   const { 
@@ -53,6 +54,53 @@ export default function SettingsScreen() {
   const [staffServiceId, setStaffServiceId] = useState('');
   const [creatingStaff, setCreatingStaff] = useState(false);
 
+  const [alertConfig, setAlertConfig] = useState<{
+      visible: boolean;
+      title: string;
+      message: string;
+      type: AlertType;
+      confirmText?: string;
+      onConfirm?: () => void;
+      showCancel?: boolean;
+      cancelText?: string;
+      onCancel?: () => void;
+  }>({
+      visible: false,
+      title: '',
+      message: '',
+      type: 'info',
+      showCancel: false
+  });
+
+  const showAlert = (
+      title: string, 
+      message: string, 
+      type: AlertType = 'info', 
+      onConfirm?: () => void,
+      options?: {
+          confirmText?: string;
+          showCancel?: boolean;
+          cancelText?: string;
+          onCancel?: () => void;
+      }
+  ) => {
+      setAlertConfig({ 
+          visible: true, 
+          title, 
+          message, 
+          type, 
+          onConfirm,
+          confirmText: options?.confirmText,
+          showCancel: options?.showCancel,
+          cancelText: options?.cancelText,
+          onCancel: options?.onCancel
+      });
+  };
+
+  const hideAlert = () => {
+      setAlertConfig(prev => ({ ...prev, visible: false }));
+  };
+
   React.useEffect(() => {
     checkBiometricStatus();
   }, []);
@@ -80,17 +128,17 @@ export default function SettingsScreen() {
           if (success) {
             await AsyncStorage.setItem('biometricEnabled', 'true');
             setBiometricEnabled(true);
-            Alert.alert('Success', `Biometric login enabled with ${biometryType === 'FaceID' ? 'Face ID' : 'Fingerprint'}`);
+            showAlert('Success', `Biometric login enabled with ${biometryType === 'FaceID' ? 'Face ID' : 'Fingerprint'}`, 'success');
           } else {
             setBiometricEnabled(false);
           }
         } else {
-          Alert.alert('Not Supported', 'Biometric authentication is not available on this device.');
+          showAlert('Not Supported', 'Biometric authentication is not available on this device.', 'warning');
           setBiometricEnabled(false);
         }
       } catch (error) {
         console.error('Biometric error', error);
-        Alert.alert('Error', 'Failed to enable biometric login');
+        showAlert('Error', 'Failed to enable biometric login', 'error');
         setBiometricEnabled(false);
       }
     }
@@ -114,14 +162,15 @@ export default function SettingsScreen() {
       setSyncStatus('success');
       setLastSyncTime(new Date());
 
-      Alert.alert(
+      showAlert(
         'Download Complete', 
-        `Successfully downloaded ${totalCount} employee records for offline use.`
+        `Successfully downloaded ${totalCount} employee records for offline use.`,
+        'success'
       );
     } catch (error: any) {
       console.error('Download failed', error);
       setSyncStatus('error');
-      Alert.alert('Download Failed', error.message || 'Could not download records');
+      showAlert('Download Failed', error.message || 'Could not download records', 'error');
     } finally {
       setDownloading(false);
     }
@@ -129,7 +178,7 @@ export default function SettingsScreen() {
 
   const handleCreateStaff = async () => {
     if (!staffName || !staffEmail || !staffPassword || !staffServiceId) {
-        Alert.alert('Validation Error', 'All fields are required');
+        showAlert('Validation Error', 'All fields are required', 'warning');
         return;
     }
 
@@ -141,7 +190,7 @@ export default function SettingsScreen() {
             password: staffPassword,
             service_id: staffServiceId
         });
-        Alert.alert('Success', 'Adhock Staff created successfully');
+        showAlert('Success', 'Adhock Staff created successfully', 'success');
         setStaffModalVisible(false);
         // Reset form
         setStaffName('');
@@ -149,7 +198,7 @@ export default function SettingsScreen() {
         setStaffPassword('');
         setStaffServiceId('');
     } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to create staff');
+        showAlert('Error', error.message || 'Failed to create staff', 'error');
     } finally {
         setCreatingStaff(false);
     }
@@ -161,48 +210,45 @@ export default function SettingsScreen() {
     setLoadingPassword(true);
     try {
       await changePassword({ currentPassword, newPassword });
-      Alert.alert('Password changed');
+      showAlert('Password changed', 'Your password has been updated successfully', 'success');
       setCurrentPassword('');
       setNewPassword('');
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Password change failed');
+      showAlert('Error', e.message || 'Password change failed', 'error');
     } finally {
       setLoadingPassword(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert('Log out?', 'You will need to sign in again.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          navigation.getParent()?.reset({
+    showAlert('Log out?', 'You will need to sign in again.', 'warning', async () => {
+        await logout();
+        navigation.getParent()?.reset({
             index: 0,
             routes: [{ name: 'Landing' }],
-          });
-        }
-      }
-    ]);
+        });
+    }, {
+        confirmText: 'Log Out',
+        showCancel: true,
+        cancelText: 'Cancel'
+    });
   };
 
   const handleSyncPending = async () => {
     try {
       await syncPendingEnrollments();
       if (uploadStatus === 'error') {
-        Alert.alert('Upload Failed', 'Some records could not be synced. Please try again.');
+        showAlert('Upload Failed', 'Some records could not be synced. Please try again.', 'error');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to trigger sync');
+      showAlert('Error', 'Failed to trigger sync', 'error');
     }
   };
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
       {/* Header */}
-      <View className="px-6 py-5 bg-white border-b border-gray-100">
+      <View className={`py-5 bg-white border-b border-gray-100 ${isSmallDevice ? 'px-4' : 'px-6'}`}>
         <Text className="text-2xl font-bold text-gray-900">Settings</Text>
         <Text className="text-sm text-gray-500 mt-1">
           Account & security preferences
@@ -210,7 +256,7 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView
-        className="flex-1 px-6 pt-6"
+        className={`flex-1 pt-6 ${isSmallDevice ? 'px-4' : 'px-6'}`}
         showsVerticalScrollIndicator={false}
       >
         {/* PROFILE */}
@@ -510,6 +556,18 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={hideAlert}
+        onConfirm={alertConfig.onConfirm}
+        confirmText={alertConfig.confirmText}
+        showCancel={alertConfig.showCancel}
+        cancelText={alertConfig.cancelText}
+        onCancel={alertConfig.onCancel}
+      />
     </SafeAreaView>
   );
 }

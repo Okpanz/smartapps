@@ -6,6 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { getRecentActivity } from '../../services/activity';
 import { formatDistanceToNow, format, eachDayOfInterval, parseISO, isBefore } from 'date-fns';
 import { Calendar } from 'react-native-calendars';
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function HistoryScreen() {
     const [activities, setActivities] = useState<any[]>([]);
@@ -173,7 +174,7 @@ export default function HistoryScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
-            <View className="px-6 py-4 border-b border-gray-100 bg-white z-10">
+            <View className={`py-4 border-b border-gray-100 bg-white z-10 ${isSmallDevice ? 'px-4' : 'px-6'}`}>
                 <Text className="text-2xl font-bold text-gray-900 mb-4">Activity History</Text>
                 
                 {/* Search Bar & Filter Button */}
@@ -228,7 +229,7 @@ export default function HistoryScreen() {
             </View>
 
             <ScrollView 
-                className="flex-1 px-6 pt-4" 
+                className={`flex-1 pt-4 ${isSmallDevice ? 'px-4' : 'px-6'}`}
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             >

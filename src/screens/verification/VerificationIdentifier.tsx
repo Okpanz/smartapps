@@ -1,4 +1,4 @@
-import { View, Text, KeyboardAvoidingView, Platform, Alert, Animated } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -13,6 +13,7 @@ import { Card } from '../../components/ui/Card';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import { verifyIdentifier } from '../../services/verification';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
+import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 
 const identifierSchema = z.object({
     identifier: z.string()
@@ -20,6 +21,8 @@ const identifierSchema = z.object({
 });
 
 type IdentifierForm = z.infer<typeof identifierSchema>;
+
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function VerificationIdentifierScreen() {
     const navigation = useNavigation<any>();
@@ -31,6 +34,27 @@ export default function VerificationIdentifierScreen() {
     
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
+
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        type: AlertType;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
+        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig(prev => ({ ...prev, visible: false }));
+    };
 
     const { control, handleSubmit, formState: { errors } } = useForm<IdentifierForm>({
         resolver: zodResolver(identifierSchema),
@@ -53,7 +77,7 @@ export default function VerificationIdentifierScreen() {
             setEmployee(employee);
             navigation.navigate('Details'); 
         } catch (error: any) {
-            Alert.alert('Verification Failed', error.message || 'Invalid Identifier');
+            showAlert('Verification Failed', error.message || 'Invalid Identifier', 'error');
         } finally {
             setLoading(false);
         }
@@ -61,6 +85,14 @@ export default function VerificationIdentifierScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+                onClose={hideAlert}
+                onConfirm={alertConfig.onConfirm}
+            />
             <EnhancedStepIndicator currentStep={1} totalSteps={3} stepLabels={stepLabels} />
 
             <KeyboardAvoidingView
@@ -68,7 +100,8 @@ export default function VerificationIdentifierScreen() {
                 style={{ flex: 1 }}
             >
                 <Animated.ScrollView
-                    contentContainerStyle={{ padding: 24 }}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ padding: isSmallDevice ? 16 : 24, paddingBottom: 40 }}
                     style={{ opacity: fadeAnim }}
                 >
                     {/* Header with Icon */}

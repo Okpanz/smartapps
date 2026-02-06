@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Alert, Image, Animated } from 'react-native';
+import { View, Text, ScrollView, Image, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
@@ -8,15 +8,45 @@ import { Card } from '../../components/ui/Card';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import { submitEnrollment } from '../../services/enrollment';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function SaveScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const flow = route.params?.flow || 'enroll';
-    const { employee, images, fingerprints, documents, resetEnrollment } = useEnrollmentStore();
+    const { employee, images, fingerprints, skippedFingerprint, documents, resetEnrollment } = useEnrollmentStore();
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
+    
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        type: AlertType;
+        confirmText?: string;
+        onConfirm?: () => void;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const showAlert = (
+        title: string, 
+        message: string, 
+        type: AlertType = 'info', 
+        onConfirm?: () => void,
+        confirmText?: string
+    ) => {
+        setAlertConfig({ visible: true, title, message, type, onConfirm, confirmText });
+    };
+
+    const hideAlert = () => {
+        setAlertConfig(prev => ({ ...prev, visible: false }));
+    };
 
     useEffect(() => {
         Animated.parallel([
@@ -35,18 +65,18 @@ export default function SaveScreen() {
     }, []);
 
     const handleSubmit = async () => {
-        const isBiometricComplete = images.length >= 2 && fingerprints.length >= 3;
+        const isBiometricComplete = images.length >= 2 && (fingerprints.length >= 2 || skippedFingerprint);
         const isScanComplete = documents.length > 0;
 
         if (!employee) return;
 
         if (flow === 'scan' && !isScanComplete) {
-            Alert.alert('Incomplete', 'Please upload at least one document or go back to enrollment.');
+            showAlert('Incomplete', 'Please upload at least one document or go back to enrollment.', 'warning');
             return;
         }
 
         if (flow === 'enroll' && !isBiometricComplete) {
-            Alert.alert('Incomplete', 'Please complete all biometric steps before saving.');
+            showAlert('Incomplete', 'Please complete all biometric steps before saving.', 'warning');
             return;
         }
 
@@ -60,26 +90,23 @@ export default function SaveScreen() {
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
             });
 
-            Alert.alert(
+            showAlert(
                 'Enrollment Successful',
                 'The employee data has been verified and saved.',
-                [
-                    {
-                        text: 'Return to Dashboard',
-                        onPress: () => {
-                            resetEnrollment();
-                            // Reset the root navigator (parent of EnrollmentNavigator) to Tabs
-                            navigation.getParent()?.reset({
-                                index: 0,
-                                routes: [{ name: 'Tabs' }],
-                            });
-                        }
-                    }
-                ]
+                'success',
+                () => {
+                    resetEnrollment();
+                    // Reset the root navigator (parent of EnrollmentNavigator) to Tabs
+                    navigation.getParent()?.reset({
+                        index: 0,
+                        routes: [{ name: 'Tabs' }],
+                    });
+                },
+                'Return to Dashboard'
             );
         } catch (error: any) {
             console.error('[SaveScreen] Submission Error:', error);
-            Alert.alert('Error', `Submission failed: ${error.message || 'Unknown error'}`);
+            showAlert('Error', `Submission failed: ${error.message || 'Unknown error'}`, 'error');
         } finally {
             setLoading(false);
         }
@@ -96,7 +123,7 @@ export default function SaveScreen() {
             />
 
             <Animated.ScrollView
-                contentContainerStyle={{ padding: 24 }}
+                contentContainerStyle={{ padding: isSmallDevice ? 16 : 24, paddingBottom: 40 }}
                 style={{ opacity: fadeAnim }}
             >
                 {/* Header with Icon */}
@@ -111,7 +138,7 @@ export default function SaveScreen() {
                     </Text>
                 </Animated.View>
 
-                <Card className="mb-4 p-6 bg-white  rounded-3xl">
+                <Card className={isSmallDevice ? "mb-4 p-4 bg-white rounded-3xl" : "mb-4 p-6 bg-white rounded-3xl"}>
                     <View className="flex-row items-center mb-4">
                         <Ionicons name="person-circle-outline" size={24} color="#10B981" />
                         <Text className="text-lg font-semibold text-primary ml-2">Employee Information</Text>
@@ -127,7 +154,7 @@ export default function SaveScreen() {
                 </Card>
 
                 {flow === 'enroll' && (
-                    <Card variant="outlined" className="mb-4 p-6 rounded-3xl bg-white">
+                    <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
                         <View className="flex-row items-center mb-4">
                             <Ionicons name="finger-print-outline" size={24} color="#10B981" />
                             <Text className="text-lg font-semibold text-primary ml-2">Fingerprints Captured</Text>
@@ -135,14 +162,21 @@ export default function SaveScreen() {
 
                         <View className="flex-row justify-between items-center bg-gray-50 p-4 rounded-2xl">
                             <Text className="text-gray-500 font-medium">Captured Scans</Text>
-                            <View className="flex-row items-center">
-                                <Text className="text-lg font-bold text-primary mr-2">{fingerprints.length} / 3</Text>
-                                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                            </View>
+                            {skippedFingerprint ? (
+                                <View className="flex-row items-center">
+                                    <Text className="text-lg font-bold text-orange-500 mr-2">Skipped</Text>
+                                    <Ionicons name="alert-circle-outline" size={20} color="#F97316" />
+                                </View>
+                            ) : (
+                                <View className="flex-row items-center">
+                                    <Text className="text-lg font-bold text-primary mr-2">{fingerprints.length} / 2</Text>
+                                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                                </View>
+                            )}
                         </View>
                     </Card>
                 )}
-                <Card variant="outlined" className="mb-4 p-6 rounded-3xl bg-white">
+                <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
                     <View className="flex-row items-center mb-4">
                         <Ionicons name="document-attach-outline" size={24} color="#10B981" />
                         <Text className="text-lg font-semibold text-primary ml-2">Documents Uploaded</Text>
@@ -158,7 +192,7 @@ export default function SaveScreen() {
                 </Card>
 
                 {flow === 'enroll' && (
-                    <Card variant="outlined" className="mb-4 p-6 rounded-3xl bg-white">
+                    <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
                         <View className="flex-row items-center mb-4">
                             <Ionicons name="camera-outline" size={24} color="#10B981" />
                             <Text className="text-lg font-semibold text-primary ml-2">Facial Photos Captured</Text>
@@ -201,6 +235,16 @@ export default function SaveScreen() {
                     className="mb-6"
                 />
             </Animated.ScrollView>
+
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+                onClose={hideAlert}
+                onConfirm={alertConfig.onConfirm}
+                confirmText={alertConfig.confirmText}
+            />
         </SafeAreaView>
     );
 }

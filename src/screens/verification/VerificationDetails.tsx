@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { isSmallDevice } from '../../utils/responsive';
 
 export default function VerificationDetailsScreen() {
     const navigation = useNavigation<any>();
@@ -35,21 +36,21 @@ export default function VerificationDetailsScreen() {
             <EnhancedStepIndicator currentStep={2} totalSteps={3} stepLabels={stepLabels} />
 
             <Animated.ScrollView
-                contentContainerStyle={{ padding: 24 }}
+                contentContainerStyle={{ padding: isSmallDevice ? 16 : 24 }}
                 style={{ opacity: fadeAnim }}
             >
                 {/* Header with Icon */}
                 <View className="items-center mb-6">
-                    <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-4">
-                        <Ionicons name="document-text-outline" size={32} color="#10B981" />
+                    <View className={`${isSmallDevice ? 'w-12 h-12' : 'w-16 h-16'} bg-primary/10 rounded-full items-center justify-center mb-4`}>
+                        <Ionicons name="document-text-outline" size={isSmallDevice ? 24 : 32} color="#10B981" />
                     </View>
-                    <Text className="text-2xl font-bold text-primary mb-2 text-center">Confirm Details</Text>
-                    <Text className="text-base text-gray-500 text-center">
+                    <Text className={`${isSmallDevice ? 'text-xl' : 'text-2xl'} font-bold text-primary mb-2 text-center`}>Confirm Details</Text>
+                    <Text className={`${isSmallDevice ? 'text-sm' : 'text-base'} text-gray-500 text-center`}>
                         Please verify the employee information below before uploading documents.
                     </Text>
                 </View>
 
-                <Card variant="outlined" className="p-6 mb-6 rounded-3xl bg-white border border-gray-100 shadow-sm">
+                <Card variant="outlined" className={isSmallDevice ? "p-4 mb-4 rounded-3xl bg-white border border-gray-100 shadow-sm" : "p-6 mb-6 rounded-3xl bg-white border border-gray-100 shadow-sm"}>
                     <DetailRow label="Full Name" value={employee.fullname || `${employee.firstName} ${employee.lastName}`} />
                     <View className="h-[1px] bg-gray-100 my-4" />
                     <DetailRow label="Identifier" value={employee.identifier} />
@@ -80,9 +81,9 @@ export default function VerificationDetailsScreen() {
 const DetailRow = ({ label, value }: { label: string; value: string }) => (
     <View className="flex-row items-center justify-between">
         <View className="flex-1">
-            <Text className="text-sm text-gray-500 mb-1">{label}</Text>
-            <Text className="text-lg font-semibold text-gray-900">{value}</Text>
+            <Text className={`text-gray-500 mb-1 ${isSmallDevice ? 'text-xs' : 'text-sm'}`}>{label}</Text>
+            <Text className={`font-semibold text-gray-900 ${isSmallDevice ? 'text-base' : 'text-lg'}`}>{value}</Text>
         </View>
-        <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+        <Ionicons name="checkmark-circle" size={isSmallDevice ? 20 : 24} color="#10B981" />
     </View>
 );

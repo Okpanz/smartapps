@@ -174,7 +174,7 @@ class ExternalScannerModule(reactContext: ReactApplicationContext) : ReactContex
                     if (isScanning) {
                         // Log.e("ExternalScanner", "Capture error: ${e.message}")
                         sendEvent("onCaptureError", e.message)
-                        logToJs("Capture error: ${e.message}", "error")
+                        // logToJs("Capture error: ${e.message}", "error")
                     }
                 }
 

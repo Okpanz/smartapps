@@ -1,4 +1,4 @@
-import { Platform, NativeModules, Alert, DeviceEventEmitter, EmitterSubscription } from 'react-native';
+import { Platform, NativeModules, DeviceEventEmitter, EmitterSubscription } from 'react-native';
 
 const { ExternalScanner } = NativeModules;
 
@@ -91,8 +91,7 @@ class ExternalScannerService {
             if (!targetDeviceId) {
                 const devices = await ExternalScanner.getDeviceList();
                 if (devices.length === 0) {
-                    Alert.alert("No Device", "No USB fingerprint scanner found.");
-                    return false;
+                    throw new Error("No USB fingerprint scanner found.");
                 }
                 const supportedDevice = devices[0]; // Simplified selection
                 targetDeviceId = supportedDevice.deviceId;
@@ -118,9 +117,8 @@ class ExternalScannerService {
 
         } catch (error: any) {
             console.error('Connection failed:', error);
-            Alert.alert("Connection Error", `Failed to connect: ${error.message}`);
             this.isConnected = false;
-            return false;
+            throw error;
         }
     }
 

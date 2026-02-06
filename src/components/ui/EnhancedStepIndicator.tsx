@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import { View, Text, Animated, StyleSheet, ViewStyle, Dimensions } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { isSmallDevice, scale } from '../../utils/responsive';
 
 interface EnhancedStepIndicatorProps {
     currentStep: number;
@@ -108,6 +109,9 @@ export const EnhancedStepIndicator = ({
     // Calculate completion percentage
     const completionPercentage = Math.round(((currentStep - 1) / (totalSteps - 1)) * 100);
 
+    const circleSize = isSmallDevice ? 32 : 40;
+    const iconSize = isSmallDevice ? 16 : 20;
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -152,6 +156,7 @@ export const EnhancedStepIndicator = ({
                             <Animated.View
                                 style={[
                                     styles.stepCircle,
+                                    { width: circleSize, height: circleSize, borderRadius: circleSize / 2 },
                                     step.isCompleted && { backgroundColor: primaryColor },
                                     step.isActive && {
                                         backgroundColor: primaryColor,
@@ -166,7 +171,7 @@ export const EnhancedStepIndicator = ({
                                 ) : (
                                     <>
                                         {step.isCompleted ? (
-                                            <Ionicons name="checkmark" size={20} color="white" />
+                                            <Ionicons name="checkmark" size={iconSize} color="white" />
                                         ) : (
                                             showStepNumbers && (
                                                 <Text
@@ -206,8 +211,7 @@ export const EnhancedStepIndicator = ({
                                         styles.connectingLine,
                                         {
                                             backgroundColor: step.isCompleted ? primaryColor : '#E5E7EB',
-                                            left: screenWidth / (totalSteps * 2),
-                                            right: -screenWidth / (totalSteps * 2) + 20,
+                                            top: circleSize / 2,
                                         },
                                     ]}
                                 />
@@ -222,7 +226,7 @@ export const EnhancedStepIndicator = ({
 
 const styles = StyleSheet.create({
     container: {
-        paddingHorizontal: 24,
+        paddingHorizontal: isSmallDevice ? 16 : 24,
         paddingBottom: 16,
         backgroundColor: 'white',
         paddingTop: 16,
@@ -234,16 +238,16 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     stepText: {
-        fontSize: 14,
+        fontSize: isSmallDevice ? 12 : 14,
         fontWeight: '600',
         color: '#4B5563',
     },
     percentageText: {
-        fontSize: 14,
+        fontSize: isSmallDevice ? 12 : 14,
         fontWeight: '700',
     },
     progressBarContainer: {
-        marginBottom: 24,
+        marginBottom: isSmallDevice ? 16 : 24,
     },
     progressBarBackground: {
         height: 6,
@@ -265,9 +269,6 @@ const styles = StyleSheet.create({
         position: 'relative',
     },
     stepCircle: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 8,
@@ -277,7 +278,7 @@ const styles = StyleSheet.create({
         elevation: 4,
     },
     stepNumber: {
-        fontSize: 14,
+        fontSize: isSmallDevice ? 12 : 14,
         fontWeight: '700',
     },
     activeStepNumber: {
@@ -287,15 +288,16 @@ const styles = StyleSheet.create({
         color: '#6B7280',
     },
     stepLabel: {
-        fontSize: 12,
+        fontSize: isSmallDevice ? 10 : 12,
         fontWeight: '500',
         textAlign: 'center',
-        maxWidth: 80,
+        maxWidth: isSmallDevice ? 60 : 80,
     },
     connectingLine: {
         position: 'absolute',
-        top: 20,
         height: 2,
         zIndex: -1,
+        left: '50%',
+        width: '100%',
     },
 });

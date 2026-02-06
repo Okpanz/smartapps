@@ -12,6 +12,9 @@ interface CustomAlertProps {
   onClose: () => void;
   confirmText?: string;
   onConfirm?: () => void;
+  showCancel?: boolean;
+  cancelText?: string;
+  onCancel?: () => void;
 }
 
 export const CustomAlert: React.FC<CustomAlertProps> = ({
@@ -21,7 +24,10 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
   type = 'info',
   onClose,
   confirmText = 'OK',
-  onConfirm
+  onConfirm,
+  showCancel = false,
+  cancelText = 'Cancel',
+  onCancel
 }) => {
   const getIconName = () => {
     switch (type) {
@@ -62,7 +68,21 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
             {message}
           </Text>
 
-          <View className="flex-row w-full space-x-3">
+          <View className="flex-row w-full space-x-3 gap-3">
+            {showCancel && (
+              <TouchableOpacity 
+                className="flex-1 bg-gray-100 py-3 rounded-xl items-center justify-center"
+                onPress={() => {
+                  if (onCancel) onCancel();
+                  onClose();
+                }}
+              >
+                <Text className="text-gray-700 font-semibold text-base">
+                  {cancelText}
+                </Text>
+              </TouchableOpacity>
+            )}
+            
             <TouchableOpacity 
               className="flex-1 bg-primary py-3 rounded-xl items-center justify-center"
               style={{ backgroundColor: getColor() }}
