@@ -5,6 +5,7 @@ import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../hooks/useAuthStore';
+import { notificationService } from './notification';
 
 interface EnrollmentData {
     employeeId: string;
@@ -53,6 +54,8 @@ const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => 
         await AsyncStorage.setItem('pendingEnrollments', JSON.stringify(pending));
         console.log(`[Enrollment] Saved offline. Total pending: ${pending.length}`);
         
+        notificationService.notifyOfflineUploadSaved();
+
         // Update store count
         useAuthStore.getState().setPendingUploadsCount(pending.length);
         
@@ -89,6 +92,7 @@ export const syncPendingEnrollments = async (): Promise<void> => {
 
         console.log(`[Enrollment] Syncing ${pending.length} pending enrollments...`);
         useAuthStore.getState().setUploadStatus('syncing');
+        notificationService.notifySyncStatus('syncing', `Uploading ${pending.length} pending enrollments...`);
 
         const remaining: OfflineEnrollment[] = [];
 
@@ -111,16 +115,19 @@ export const syncPendingEnrollments = async (): Promise<void> => {
         
         if (remaining.length === 0) {
             useAuthStore.getState().setUploadStatus('success');
+            notificationService.notifySyncStatus('completed', 'All pending uploads synced successfully.');
             setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
         } else {
             useAuthStore.getState().setUploadStatus('error');
+            notificationService.notifySyncStatus('failed', `${remaining.length} uploads failed. Will retry later.`);
         }
         
         console.log(`[Enrollment] Sync complete. Remaining pending: ${remaining.length}`);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('[Enrollment] Sync error:', error);
         useAuthStore.getState().setUploadStatus('error');
+        notificationService.notifySyncStatus('failed', error.message || 'Sync encountered an error.');
     }
 };
 

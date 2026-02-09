@@ -33,7 +33,7 @@ export default function DashboardScreen() {
     const [recentActivities, setRecentActivities] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [stats, setStats] = useState<any[]>([
-        { label: 'Total Enrolled', value: '...', change: '...' },
+        { label: 'Total Verified', value: '...', change: '...' },
         { label: 'Verified', value: '...', change: '...' },
         { label: 'Pending', value: '...', change: '...' },
         { label: 'This Month', value: '...', change: '...' },
@@ -75,7 +75,7 @@ export default function DashboardScreen() {
         try {
             const data = await getDashboardStats();
             setStats([
-                { label: 'Total Enrolled', value: data.total.value, change: data.total.change },
+                { label: 'Total Verified', value: data.total.value, change: data.total.change },
                 { label: 'Verified', value: data.verified.value, change: data.verified.change },
                 { label: 'Pending', value: data.pending.value, change: data.pending.change },
                 { label: 'This Month', value: data.thisMonth.value, change: data.thisMonth.change },
@@ -102,8 +102,8 @@ export default function DashboardScreen() {
                     icon = 'person-add';
                     bgIcon = 'bg-blue-100';
                     iconColor = '#3B82F6';
-                    name = log.details?.employeeName || 'New Enrollment';
-                    type = 'Employee Enrollment';
+                    name = log.details?.employeeName || 'New Verification';
+                    type = 'Employee Verification';
                 } else if (log.action.includes('VERIFICATION')) {
                     icon = 'checkmark-circle';
                     bgIcon = 'bg-green-100';

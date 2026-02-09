@@ -14,17 +14,32 @@ import DocumentVerificationNavigator from './navigation/DocumentVerificationNavi
 import { NetworkIndicator } from './components/NetworkIndicator';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { syncPendingEnrollments } from './services/enrollment';
-
+import { notificationService } from './services/notification';
 const Stack = createNativeStackNavigator();
 
 export default function App() {
     console.log('[App] Rendering Root Component');
     const netInfo = useNetInfo();
+    const wasOffline = React.useRef<boolean | null>(null);
 
     React.useEffect(() => {
+        if (wasOffline.current === null && netInfo.isConnected !== null) {
+            wasOffline.current = !netInfo.isConnected;
+            return;
+        }
+
         if (netInfo.isConnected === true) {
             console.log('[App] Network connected, attempting sync...');
+
+            // Only notify if we were previously offline
+            if (wasOffline.current) {
+                notificationService.notifyInternetRestored();
+            }
+
             syncPendingEnrollments();
+            wasOffline.current = false;
+        } else if (netInfo.isConnected === false) {
+            wasOffline.current = true;
         }
     }, [netInfo.isConnected]);
 

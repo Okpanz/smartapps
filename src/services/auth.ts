@@ -141,6 +141,8 @@ export const biometricLogin = async (): Promise<User> => {
     }
 };
 
+import { notificationService } from './notification.ts';
+
 export const downloadOfflineRecords = async (
     onProgress?: (count: number) => void,
     serviceId?: string | number
@@ -150,6 +152,7 @@ export const downloadOfflineRecords = async (
             throw new Error('Service ID is required for downloading records');
         }
 
+        notificationService.notifySyncStatus('syncing', 'Downloading offline records...');
         let hasMore = true;
         let nextCursor: number | null = null;
         
@@ -236,9 +239,11 @@ export const downloadOfflineRecords = async (
         }
         
         console.log(`[Offline Sync] Download complete. Total records in storage: ${totalSaved}`);
+        notificationService.notifySyncStatus('completed', `Downloaded ${totalSaved} records.`);
         return totalSaved;
 
     } catch (error: any) {
+        notificationService.notifySyncStatus('failed', error.message);
         console.error('[Offline Sync] Error:', error.message);
         if (error.response) {
             console.error('[Offline Sync] Response Status:', error.response.status);
