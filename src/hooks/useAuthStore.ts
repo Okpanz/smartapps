@@ -7,6 +7,7 @@ interface AuthState {
     user: User | null;
     isAuthenticated: boolean;
     syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+    syncProgress: number; // 0-100
     uploadStatus: 'idle' | 'syncing' | 'success' | 'error';
     lastSyncTime: Date | null;
     pendingUploadsCount: number;
@@ -14,6 +15,7 @@ interface AuthState {
     logout: () => Promise<void>;
     loadUserFromStorage: () => Promise<void>;
     setSyncStatus: (status: 'idle' | 'syncing' | 'success' | 'error') => void;
+    setSyncProgress: (progress: number) => void;
     setUploadStatus: (status: 'idle' | 'syncing' | 'success' | 'error') => void;
     setLastSyncTime: (time: Date) => void;
     setPendingUploadsCount: (count: number) => void;
@@ -23,6 +25,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     isAuthenticated: false,
     syncStatus: 'idle',
+    syncProgress: 0,
     uploadStatus: 'idle',
     lastSyncTime: null,
     pendingUploadsCount: 0,
@@ -43,7 +46,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             console.error('[AuthStore] Failed to clear AsyncStorage', e);
         }
 
-        set({ user: null, isAuthenticated: false, syncStatus: 'idle', uploadStatus: 'idle', lastSyncTime: null, pendingUploadsCount: 0 });
+        set({ user: null, isAuthenticated: false, syncStatus: 'idle', syncProgress: 0, uploadStatus: 'idle', lastSyncTime: null, pendingUploadsCount: 0 });
     },
     loadUserFromStorage: async () => {
         try {
@@ -56,6 +59,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
     },
     setSyncStatus: (status) => set({ syncStatus: status }),
+    setSyncProgress: (progress) => set({ syncProgress: progress }),
     setUploadStatus: (status) => set({ uploadStatus: status }),
     setLastSyncTime: (time) => set({ lastSyncTime: time }),
     setPendingUploadsCount: (count) => set({ pendingUploadsCount: count }),

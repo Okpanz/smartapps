@@ -23,7 +23,9 @@ export default function DashboardScreen() {
         user, 
         logout, 
         syncStatus, 
-        setSyncStatus, 
+        setSyncStatus,
+        syncProgress,
+        setSyncProgress,
         setLastSyncTime,
         pendingUploadsCount,
         uploadStatus 
@@ -50,9 +52,15 @@ export default function DashboardScreen() {
             if (user?.service_id && syncStatus === 'idle') {
                 try {
                     setSyncStatus('syncing');
+                    setSyncProgress(0);
                     console.log('[Dashboard] Starting automatic sync (download)...');
-                    await downloadOfflineRecords(undefined, user.service_id);
+                    await downloadOfflineRecords((count, percentage) => {
+                        if (percentage !== undefined) {
+                            setSyncProgress(percentage);
+                        }
+                    }, user.service_id);
                     setSyncStatus('success');
+                    setSyncProgress(100);
                     setLastSyncTime(new Date());
                     console.log('[Dashboard] Automatic download sync completed');
                 } catch (error) {
@@ -201,6 +209,19 @@ export default function DashboardScreen() {
                         </View>
 
                     </View>
+
+                {/* Sync Progress */}
+                {syncStatus === 'syncing' && (
+                    <View className="mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <View className="flex-row justify-between items-center mb-2">
+                            <Text className="text-sm font-semibold text-green-900">Syncing Offline Records...</Text>
+                            <Text className="text-sm font-bold text-green-900">{syncProgress}%</Text>
+                        </View>
+                        <View className="h-2 bg-green-200 rounded-full overflow-hidden">
+                            <View className="h-full bg-green-500 rounded-full" style={{ width: `${syncProgress}%` }} />
+                        </View>
+                    </View>
+                )}
 
                 {/* Stats Cards */}
                 <View className="flex-row flex-wrap gap-2">

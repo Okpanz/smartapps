@@ -141,6 +141,7 @@ export default function VerificationDocumentsScreen() {
                 images: [],
                 fingerprints: [],
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
+                status: 'DOCUMENT SCANNING',
             });
 
             showAlert(

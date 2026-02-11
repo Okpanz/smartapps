@@ -3,6 +3,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { databaseService } from './database';
+import { useAuthStore } from '../hooks/useAuthStore';
 
 export interface User {
     id: string;
@@ -47,7 +48,10 @@ export const login = async (username: string, password: string): Promise<User> =
                 username: user.email,
                 name: user.name,
                 email: user.email,
+                service_id: user.service_id,
             };
+
+            console.log('[Auth] User Data mapped:', userData);
 
             await AsyncStorage.setItem('userData', JSON.stringify(userData));
 
@@ -117,6 +121,7 @@ export const biometricLogin = async (): Promise<User> => {
                 username: user.email,
                 name: user.name,
                 email: user.email,
+                service_id: user.service_id,
             };
 
             await AsyncStorage.setItem('userData', JSON.stringify(userData));
@@ -141,10 +146,12 @@ export const biometricLogin = async (): Promise<User> => {
     }
 };
 
-import { notificationService } from './notification.ts';
+import { notificationService } from './notification';
+
+import { getUniqueId } from 'react-native-device-info';
 
 export const downloadOfflineRecords = async (
-    onProgress?: (count: number) => void,
+    onProgress?: (count: number, percentage?: number) => void,
     serviceId?: string | number
 ): Promise<number> => {
     try {
@@ -152,13 +159,37 @@ export const downloadOfflineRecords = async (
             throw new Error('Service ID is required for downloading records');
         }
 
-        notificationService.notifySyncStatus('syncing', 'Downloading offline records...');
-        let hasMore = true;
-        let nextCursor: number | null = null;
-        
-        console.log(`[Offline Sync] Starting download for Service ID: ${serviceId}`);
+        // Check for cooldown
+        const lastFailureKey = `sync_failure_${serviceId}`;
+        const lastFailureStr = await AsyncStorage.getItem(lastFailureKey);
+        if (lastFailureStr) {
+            const lastFailureTime = parseInt(lastFailureStr, 10);
+            const cooldownMs = 5 * 60 * 1000; // 5 minutes
+            if (Date.now() - lastFailureTime < cooldownMs) {
+                console.log('[Offline Sync] Cooldown active. Skipping sync.');
+                return 0;
+            }
+        }
 
-        let totalSaved = 0;
+        notificationService.notifySyncStatus('syncing', 'Downloading offline records...');
+        
+        // Resume logic: Check for saved cursor
+        const cursorKey = `offline_sync_cursor_${serviceId}`;
+        const savedCursor = await AsyncStorage.getItem(cursorKey);
+        
+        let hasMore = true;
+        let nextCursor: number | null = savedCursor ? JSON.parse(savedCursor) : null;
+        
+        console.log(`[Offline Sync] Starting download for Service ID: ${serviceId}. Resume Cursor: ${nextCursor}`);
+        
+        // If starting fresh (no cursor), clear previous data first
+        if (!nextCursor) {
+            console.log('[Offline Sync] Starting fresh download. Clearing existing database...');
+            await databaseService.clearDatabase();
+        }
+
+        let totalSaved = await databaseService.getCount();
+        let totalRecords = 0;
 
         while (hasMore) {
             console.log(`[Offline Sync] Fetching batch. Cursor: ${nextCursor}`);
@@ -203,15 +234,21 @@ export const downloadOfflineRecords = async (
                 const fetchedEmployees = responseData.employees || [];
                 
                 const pagination = responseData.pagination;
+                console.log('[Offline Sync] Pagination data:', JSON.stringify(pagination));
+                
                 hasMore = pagination?.has_more || false;
                 nextCursor = pagination?.next_cursor;
+                
+                // Try to get total from pagination if available
+                if (pagination?.total_records) {
+                    totalRecords = Number(pagination.total_records);
+                } else if (pagination?.total) {
+                    totalRecords = Number(pagination.total);
+                }
+                
+                console.log(`[Offline Sync] Total Records from API: ${totalRecords}`);
 
                 if (fetchedEmployees.length > 0) {
-                     console.log('[Offline Sync] Downloaded Employees (First 10):');
-                     fetchedEmployees.forEach((emp: any, index: number) => {
-                         console.log(`${index + 1}. ${emp.fullname} (${emp.employee_number || emp.id}) - ${emp.designation || 'No Designation'}`);
-                     });
-
                      // UPSERT LOGIC: Save to SQLite Database
                      try {
                         console.log(`[Offline Sync] Upserting ${fetchedEmployees.length} records to SQLite...`);
@@ -220,17 +257,35 @@ export const downloadOfflineRecords = async (
                         totalSaved = await databaseService.getCount();
                         console.log(`[Offline Sync] Saved batch of ${fetchedEmployees.length}. Total unique records in DB: ${totalSaved}`);
                         
+                        // Save cursor for resume capability
+                        if (nextCursor) {
+                            await AsyncStorage.setItem(cursorKey, JSON.stringify(nextCursor));
+                        }
+
                      } catch (err: any) {
                          console.error('[Offline Sync] Error saving batch to SQLite:', err.message);
                          throw err;
                      }
                 }
 
-                if (onProgress) {
-                    onProgress(totalSaved);
+                let percentage = 0;
+                if (totalRecords > 0) {
+                    percentage = Math.min(Math.round((totalSaved / totalRecords) * 100), 100);
                 }
 
-                console.log(`[Offline Sync] Batch processed. Has More: ${hasMore}, Next Cursor: ${nextCursor}`);
+                if (onProgress) {
+                    onProgress(totalSaved, percentage);
+                    
+                    // Update notification with percentage
+                    if (percentage > 0) {
+                        notificationService.notifySyncStatus('syncing', `Downloading... ${percentage}%`);
+                    }
+                }
+                
+                // Force update global store state
+                useAuthStore.getState().setSyncProgress(percentage);
+
+                console.log(`[Offline Sync] Batch processed. Has More: ${hasMore}, Next Cursor: ${nextCursor}, Progress: ${percentage}%`);
                 
             } else {
                 console.warn('[Offline Sync] API returned success=false or invalid format');
@@ -238,13 +293,24 @@ export const downloadOfflineRecords = async (
             }
         }
         
+        // Sync complete: Clear saved cursor
+        await AsyncStorage.removeItem(cursorKey);
+        await AsyncStorage.removeItem(lastFailureKey);
+        
         console.log(`[Offline Sync] Download complete. Total records in storage: ${totalSaved}`);
         notificationService.notifySyncStatus('completed', `Downloaded ${totalSaved} records.`);
         return totalSaved;
 
     } catch (error: any) {
+        // Track failure point
+        const deviceId = await getUniqueId();
+        console.error(`[Offline Sync] Failed on device ${deviceId}:`, error.message);
+        
+        // Set failure timestamp for cooldown
+        const lastFailureKey = `sync_failure_${serviceId}`;
+        await AsyncStorage.setItem(lastFailureKey, Date.now().toString());
+
         notificationService.notifySyncStatus('failed', error.message);
-        console.error('[Offline Sync] Error:', error.message);
         if (error.response) {
             console.error('[Offline Sync] Response Status:', error.response.status);
             console.error('[Offline Sync] Response Data:', JSON.stringify(error.response.data));
@@ -409,6 +475,28 @@ export const createAdhockStaff = async (userData: any): Promise<any> => {
         if (error.response && error.response.data && error.response.data.message) {
              throw new Error(error.response.data.message);
         }
+        throw error;
+    }
+};
+
+export const clearOfflineRecords = async (serviceId?: string | number): Promise<void> => {
+    try {
+        console.log('[Offline Sync] Clearing offline records...');
+        await databaseService.clearDatabase();
+        
+        if (serviceId) {
+             const cursorKey = `offline_sync_cursor_${serviceId}`;
+             const lastFailureKey = `sync_failure_${serviceId}`;
+             await AsyncStorage.removeItem(cursorKey);
+             await AsyncStorage.removeItem(lastFailureKey);
+        } else {
+         
+        }
+        
+        console.log('[Offline Sync] Offline records cleared successfully');
+        notificationService.notifySyncStatus('completed', 'Offline records cleared.');
+    } catch (error) {
+        console.error('[Offline Sync] Failed to clear offline records:', error);
         throw error;
     }
 };

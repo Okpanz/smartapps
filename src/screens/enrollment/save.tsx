@@ -88,6 +88,7 @@ export default function SaveScreen() {
                 images,
                 fingerprints,
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
+                status: 'ENROLLED',
             });
 
             showAlert(

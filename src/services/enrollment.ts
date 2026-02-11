@@ -13,6 +13,7 @@ interface EnrollmentData {
     images: string[];
     fingerprints: string[];
     documents?: Array<{ uri: string; type: string }>;
+    status?: string;
 }
 
 interface OfflineEnrollment {
@@ -142,6 +143,10 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
     
     if (data.employeeInfo) {
         formData.append('employee_info', JSON.stringify(data.employeeInfo));
+    }
+
+    if (data.status) {
+        formData.append('status', data.status);
     }
 
     // Append Images

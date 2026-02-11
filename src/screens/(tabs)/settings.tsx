@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useNavigation } from '@react-navigation/native';
-import { changePassword, downloadOfflineRecords, createAdhockStaff } from '../../services/auth';
+import { changePassword, downloadOfflineRecords, createAdhockStaff, clearOfflineRecords } from '../../services/auth';
 import { syncPendingEnrollments } from '../../services/enrollment';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
@@ -45,6 +45,8 @@ export default function SettingsScreen() {
 
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadPercentage, setDownloadPercentage] = useState(0);
+  const [clearingCache, setClearingCache] = useState(false);
 
   // Adhock Staff Creation State
   const [staffModalVisible, setStaffModalVisible] = useState(false);
@@ -150,13 +152,18 @@ export default function SettingsScreen() {
       setSyncStatus('syncing');
       setDownloadProgress(0);
       
-      if (!user?.service_id) {
-        console.log(`[Settings] Service ID not found in user profile: ${user?.service_id}`);
+      console.log('[Settings] Current User:', JSON.stringify(user, null, 2));
+
+      if (user?.service_id === undefined || user?.service_id === null) {
+        console.log(`[Settings] Service ID not found in user profile: ${JSON.stringify(user)}`);
         throw new Error('Service ID not found in user profile. Please contact support.');
       }
 
-      const totalCount = await downloadOfflineRecords((count) => {
+      const totalCount = await downloadOfflineRecords((count, percentage) => {
         setDownloadProgress(count);
+        if (percentage !== undefined) {
+            setDownloadPercentage(percentage);
+        }
       }, user.service_id);
       
       setSyncStatus('success');
@@ -174,6 +181,32 @@ export default function SettingsScreen() {
     } finally {
       setDownloading(false);
     }
+  };
+
+  const handleClearCache = () => {
+      showAlert(
+          'Clear Offline Cache?', 
+          'This will remove all downloaded employee records from your device. You can download them again later.',
+          'warning',
+          async () => {
+              try {
+                  setClearingCache(true);
+                  await clearOfflineRecords(user?.service_id);
+                  setSyncStatus('idle');
+                  showAlert('Success', 'Offline records cleared successfully', 'success');
+              } catch (error: any) {
+                  console.error('Clear cache failed', error);
+                  showAlert('Error', 'Failed to clear cache', 'error');
+              } finally {
+                  setClearingCache(false);
+              }
+          },
+          {
+              confirmText: 'Clear',
+              showCancel: true,
+              cancelText: 'Cancel'
+          }
+      );
   };
 
   const handleCreateStaff = async () => {
@@ -352,12 +385,27 @@ export default function SettingsScreen() {
             >
               <Text className="text-white font-bold">
                 {downloading || syncStatus === 'syncing' 
-                  ? `Syncing... ${downloadProgress > 0 ? `(${downloadProgress})` : ''}`
+                  ? `Syncing... ${downloadPercentage > 0 ? `${downloadPercentage}% (${downloadProgress})` : `(${downloadProgress})`}`
                   : syncStatus === 'error' 
                     ? 'Retry Sync' 
                     : 'Download Offline Data'
                 }
               </Text>
+            </TouchableOpacity>
+
+            {/* Clear Cache Button */}
+            <TouchableOpacity 
+                onPress={handleClearCache}
+                disabled={clearingCache || downloading || syncStatus === 'syncing'}
+                className="mt-3 items-center py-2"
+            >
+                {clearingCache ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                ) : (
+                    <Text className="text-sm font-medium text-red-500">
+                        Clear Offline Cache
+                    </Text>
+                )}
             </TouchableOpacity>
           </View>
 
