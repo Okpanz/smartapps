@@ -12,6 +12,16 @@ module.exports = {
             "allowUndefined": true,
             "verbose": false
         }],
+        [
+            'module-resolver',
+            {
+                root: ['./src'],
+                extensions: ['.ios.js', '.android.js', '.js', '.ts', '.tsx', '.json'],
+                alias: {
+                    '@i-am-alive': '../i-am-alive/src',
+                },
+            },
+        ],
         '@babel/plugin-transform-export-namespace-from',
         'react-native-worklets-core/plugin',
         'react-native-reanimated/plugin',

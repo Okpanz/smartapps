@@ -12,4 +12,8 @@ const config = getDefaultConfig(__dirname);
 // Disable Watchman due to permission issues
 config.resolver.useWatchman = false;
 
+config.watchFolders = [
+    require('path').resolve(__dirname, '..', 'i-am-alive')
+];
+
 module.exports = withNativeWind(config, { input: './src/global.css' });
