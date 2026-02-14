@@ -23,25 +23,34 @@ export default function App() {
     const wasOffline = React.useRef<boolean | null>(null);
 
     React.useEffect(() => {
-        if (wasOffline.current === null && netInfo.isConnected !== null) {
-            wasOffline.current = !netInfo.isConnected;
+        // Calculate current state based on both properties
+        // Offline = Disconnected OR (Connected but not reachable)
+        const isOffline = netInfo.isConnected === false || (netInfo.isConnected === true && netInfo.isInternetReachable === false);
+        // Online = Connected AND Reachable
+        const isOnline = netInfo.isConnected === true && netInfo.isInternetReachable === true;
+        // Unknown = Connected but reachability is null (pending)
+        const isUnknown = netInfo.isConnected === true && netInfo.isInternetReachable === null;
+
+        // Initialize state
+        if (wasOffline.current === null) {
+            if (!isUnknown) {
+                wasOffline.current = isOffline;
+            }
             return;
         }
 
-        if (netInfo.isConnected === true) {
-            console.log('[App] Network connected, attempting sync...');
-
-            // Only notify if we were previously offline
+        if (isOnline) {
+            // Only notify/sync if we were previously offline
             if (wasOffline.current) {
+                console.log('[App] Network connected (reachable), attempting sync...');
                 notificationService.notifyInternetRestored();
+                syncPendingEnrollments();
             }
-
-            syncPendingEnrollments();
             wasOffline.current = false;
-        } else if (netInfo.isConnected === false) {
+        } else if (isOffline) {
             wasOffline.current = true;
         }
-    }, [netInfo.isConnected]);
+    }, [netInfo.isConnected, netInfo.isInternetReachable]);
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>

@@ -169,9 +169,20 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
 
             // User Requirement: "should not search offline when online"
             // If we attempted an online search (because isOffline was false), and it failed (e.g. Network Error),
-            // we should NOT fall back to local storage. We should report the connection error.
+            // we should NOT fall back to local storage unless it's clearly a connectivity issue.
             if (!isOffline) {
-                throw new Error(`Online Verification Failed: ${error.message}. Please check your connection to the server.`);
+                // Check if it's a network error or timeout
+                const isNetworkError = 
+                    error.message === 'Network Error' || 
+                    (error.message && error.message.toLowerCase().includes('timeout')) || 
+                    error.code === 'ECONNABORTED' || 
+                    error.code === 'ERR_NETWORK';
+
+                if (isNetworkError) {
+                    console.warn('[Verify] Network request failed despite online status. Falling back to local storage.');
+                } else {
+                    throw new Error(`Online Verification Failed: ${error.message}. Please check your connection to the server.`);
+                }
             }
 
             console.warn('[Verify] Attempting fallback to local storage...');

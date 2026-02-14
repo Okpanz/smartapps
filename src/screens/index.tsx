@@ -200,7 +200,7 @@ export default function LoginScreen() {
                     ) : (
                         <>
                             <Text className="text-base text-gray-600 text-center mb-2">Secure Verification Access</Text>
-                            <Text className="text-xs text-gray-400 text-center mb-8">v1.1 (Beta Version)</Text>
+                            <Text className="text-xs text-gray-400 text-center mb-8">v1.2 (Beta Version)</Text>
                         </>
                     )}
 

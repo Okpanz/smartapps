@@ -253,18 +253,40 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleLogout = () => {
-    showAlert('Log out?', 'You will need to sign in again.', 'warning', async () => {
+  const performLogout = async () => {
         await logout();
         navigation.getParent()?.reset({
             index: 0,
             routes: [{ name: 'Landing' }],
         });
-    }, {
-        confirmText: 'Log Out',
-        showCancel: true,
-        cancelText: 'Cancel'
-    });
+  };
+
+  const handleLogout = () => {
+    if (pendingUploadsCount > 0) {
+        showAlert(
+            'Unsynced Data',
+            'You have pending enrollments that haven\'t been uploaded yet. We recommend syncing before logging out.',
+            'warning',
+            async () => {
+                 // Sync Now
+                 await handleSyncPending();
+            }, 
+            {
+                confirmText: 'Sync Now',
+                showCancel: true,
+                cancelText: 'Logout Anyway',
+                onCancel: () => {
+                    performLogout();
+                }
+            }
+        );
+    } else {
+        showAlert('Log out?', 'You will need to sign in again.', 'warning', performLogout, {
+            confirmText: 'Log Out',
+            showCancel: true,
+            cancelText: 'Cancel'
+        });
+    }
   };
 
   const handleSyncPending = async () => {

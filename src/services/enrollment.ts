@@ -5,13 +5,14 @@ import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../hooks/useAuthStore';
+import { useEnrollmentStore, FingerprintData } from '../hooks/useEnrollmentStore';
 import { notificationService } from './notification';
 
 interface EnrollmentData {
     employeeId: string;
     employeeInfo?: any;
     images: string[];
-    fingerprints: string[];
+    fingerprints: FingerprintData[];
     documents?: Array<{ uri: string; type: string }>;
     status?: string;
 }
@@ -80,7 +81,7 @@ export const checkPendingEnrollments = async (): Promise<void> => {
 export const syncPendingEnrollments = async (): Promise<void> => {
     try {
         const netState = await NetInfo.fetch();
-        if (!netState.isConnected) return;
+        if (!netState.isConnected || (netState.isConnected && netState.isInternetReachable === false)) return;
 
         const existingStr = await AsyncStorage.getItem('pendingEnrollments');
         if (!existingStr) return;
@@ -176,9 +177,14 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
     }
 
     // Append Fingerprints
+    const fingerprintMetadata: { type: string }[] = [];
     if (data.fingerprints && Array.isArray(data.fingerprints)) {
             for (let index = 0; index < data.fingerprints.length; index++) {
-            let uri = data.fingerprints[index];
+            const fingerprint = data.fingerprints[index];
+            // Handle both object (new) and string (old/fallback) formats
+            let uri = typeof fingerprint === 'string' ? fingerprint : fingerprint.uri;
+            const type = typeof fingerprint === 'string' ? 'Unknown' : fingerprint.type;
+            
             const filename = uri.split('/').pop() || `fingerprint_${index}.jpg`;
             
             // Ensure URI format for Android
@@ -187,7 +193,7 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
             }
 
             const fileExists = await RNFS.exists(uri);
-            console.log(`[Enrollment] Fingerprint ${index}: ${uri} (Exists: ${fileExists})`);
+            console.log(`[Enrollment] Fingerprint ${index}: ${uri} (${type}) (Exists: ${fileExists})`);
 
             if (fileExists) {
                 formData.append('fingerprints', {
@@ -195,10 +201,17 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
                     type: 'image/jpeg',
                     name: filename,
                 } as any);
+                
+                fingerprintMetadata.push({ type });
             } else {
                     console.warn(`[Enrollment] Skipping missing file: ${uri}`);
             }
         }
+    }
+    
+    // Append Fingerprint Metadata
+    if (fingerprintMetadata.length > 0) {
+        formData.append('fingerprint_info', JSON.stringify(fingerprintMetadata));
     }
 
     // Append Documents
@@ -220,7 +233,7 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
             if (fileExists) {
                 formData.append('documents', {
                     uri: uri,
-                    type: 'image/jpeg', // Assuming jpeg for scanned docs
+                    type: 'image/jpeg', 
                     name: filename,
                 } as any);
                 documentTypes.push(doc.type);
@@ -246,15 +259,29 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
     // Log FormData parts (approximation as we can't iterate FormData easily in RN sometimes)
     console.log('[Enrollment] FormData created with keys:', ['employee_id', 'device_platform', 'timestamp', 'employee_info', 'images', 'fingerprints']);
 
-    const response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'Authorization': token ? `Bearer ${token}` : '',
-            'Accept': 'application/json',
-            // Content-Type is intentionally omitted to let fetch set it with boundary
+    // Use AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for large uploads
+
+    let response;
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+            headers: {
+                'Authorization': token ? `Bearer ${token}` : '',
+                'Accept': 'application/json',
+                // Content-Type is intentionally omitted to let fetch set it with boundary
+            }
+        });
+        clearTimeout(timeoutId);
+    } catch (error: any) {
+        if (error.name === 'AbortError' || error.message === 'Aborted') {
+            throw new Error('Upload Request Timed Out');
         }
-    });
+        throw error;
+    }
 
     console.log(`[Enrollment] Response status: ${response.status}`);
     const responseText = await response.text();
@@ -283,7 +310,8 @@ export const submitEnrollment = async (data: EnrollmentData): Promise<boolean> =
 
         // Check Network Status
         const netState = await NetInfo.fetch();
-        const isOffline = netState.isConnected === false;
+        // Consider offline if disconnected OR (connected but not reachable)
+        const isOffline = netState.isConnected === false || (netState.isConnected === true && netState.isInternetReachable === false);
 
         if (isOffline) {
             console.log('[Enrollment] Offline mode detected. Saving to local storage.');

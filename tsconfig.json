@@ -18,15 +18,11 @@
     "paths": {
       "@/*": [
         "src/*"
-      ],
-      "@i-am-alive/*": [
-        "../i-am-alive/src/*"
       ]
     }
   },
   "include": [
     "src/**/*",
-    "../i-am-alive/src/**/*",
     "index.js",
     "nativewind-env.d.ts"
   ],

@@ -25,15 +25,17 @@ interface LoginResponse {
 export const login = async (username: string, password: string): Promise<User> => {
     console.log(`Logging in with ${username} to ${api.defaults.baseURL}`);
     try {
+        const deviceId = await getUniqueId();
         const response = await api.post<LoginResponse>('/auth/sign-in', {
             email: username,
-            password
+            password,
+            device_id: deviceId
         });
 
         console.log('Login Response:', JSON.stringify(response.data, null, 2));
 
         if (response.data.success && response.data.data && response.data.data.token) {
-            const { token, refreshToken, user } = response.data.data;
+            const { token, refreshToken, user, is_first_device_login } = response.data.data;
 
             // Store token for subsequent requests
             await AsyncStorage.setItem('userToken', token);
@@ -54,6 +56,14 @@ export const login = async (username: string, password: string): Promise<User> =
             console.log('[Auth] User Data mapped:', userData);
 
             await AsyncStorage.setItem('userData', JSON.stringify(userData));
+            
+            // Pass the flag to the UI layer to handle the sync
+            if (is_first_device_login) {
+                console.log('[Auth] First time login flag received. Setting flag in user data.');
+                userData.is_first_device_login = true;
+                // Update storage with the flag included
+                await AsyncStorage.setItem('userData', JSON.stringify(userData));
+            }
 
             return userData;
         }

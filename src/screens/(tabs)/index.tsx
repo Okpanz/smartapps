@@ -17,6 +17,8 @@ import { checkPendingEnrollments, syncPendingEnrollments } from '../../services/
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { isSmallDevice } from '../../utils/responsive';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
     const { 
@@ -48,26 +50,34 @@ export default function DashboardScreen() {
 
     useEffect(() => {
         const performAutoSync = async () => {
-            // 1. Download Offline Records (if needed)
-            if (user?.service_id && syncStatus === 'idle') {
-                try {
-                    setSyncStatus('syncing');
-                    setSyncProgress(0);
-                    console.log('[Dashboard] Starting automatic sync (download)...');
-                    await downloadOfflineRecords((count, percentage) => {
-                        if (percentage !== undefined) {
-                            setSyncProgress(percentage);
-                        }
-                    }, user.service_id);
-                    setSyncStatus('success');
-                    setSyncProgress(100);
-                    setLastSyncTime(new Date());
-                    console.log('[Dashboard] Automatic download sync completed');
-                } catch (error) {
-                    console.error('[Dashboard] Automatic download sync failed', error);
-                    setSyncStatus('error');
-                }
-            }
+             // 1. Handle First-Time Login Auto Download
+             if (user?.is_first_device_login && user?.service_id && syncStatus === 'idle') {
+                 console.log('[Dashboard] First time login flag detected. Starting auto-download...');
+                 try {
+                     setSyncStatus('syncing');
+                     setSyncProgress(0);
+                     
+                     // Clear the flag immediately to prevent loop
+                     const updatedUser = { ...user, is_first_device_login: false };
+                     await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
+                     // Note: We don't update store user immediately to avoid re-triggering this effect in a weird state,
+                     // but the next app reload will have the correct state.
+                     
+                     await downloadOfflineRecords((count, percentage) => {
+                         if (percentage !== undefined) {
+                             setSyncProgress(percentage);
+                         }
+                     }, user.service_id);
+                     
+                     setSyncStatus('success');
+                     setSyncProgress(100);
+                     setLastSyncTime(new Date());
+                     console.log('[Dashboard] First-time automatic download completed');
+                 } catch (error) {
+                     console.error('[Dashboard] First-time automatic download failed', error);
+                     setSyncStatus('error');
+                 }
+             }
 
             // 2. Upload Pending Enrollments (if any)
             if (pendingUploadsCount > 0 && uploadStatus === 'idle') {
@@ -85,7 +95,7 @@ export default function DashboardScreen() {
             setStats([
                 { label: 'Total Verified', value: data.total.value, change: data.total.change },
                 { label: 'Verified', value: data.verified.value, change: data.verified.change },
-                { label: 'Pending', value: data.pending.value, change: data.pending.change },
+                { label: 'Pending', value: pendingUploadsCount.toString(), change: 'Local' },
                 { label: 'This Month', value: data.thisMonth.value, change: data.thisMonth.change },
             ]);
         } catch (error) {

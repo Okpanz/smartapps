@@ -99,6 +99,12 @@ export default function FingerprintScreen() {
 
     const currentCount = fingerprints.length;
     const isComplete = currentCount >= 2 || skippedFingerprint;
+    
+    const getCurrentFingerInstruction = () => {
+        if (currentCount === 0) return "Please scan your LEFT thumb";
+        if (currentCount === 1) return "Please scan your RIGHT thumb";
+        return "All fingers captured";
+    };
 
     const [countdown, setCountdown] = useState<number | null>(null);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -309,7 +315,11 @@ export default function FingerprintScreen() {
                 await RNFS.writeFile(path, reviewState.data, 'base64');
                 console.log('[Fingerprint] Saved to temp file:', path);
 
-                addFingerprint(`file://${path}`);
+                const fingerType = currentCount === 0 ? 'Left Thumb' : 'Right Thumb';
+                addFingerprint({
+                    uri: `file://${path}`,
+                    type: fingerType
+                });
                 
                 setReviewState({ hasCapture: false, quality: 0, data: null, preview: null });
 
@@ -378,7 +388,7 @@ export default function FingerprintScreen() {
             >
                 <Text className="text-2xl font-bold text-primary mb-2 text-center">Fingerprint Capture</Text>
                 <Text className="text-base text-gray-500 text-center mb-6">
-                    Use the external scanner to capture 2 fingerprints.
+                    {getCurrentFingerInstruction()}
                 </Text>
 
                 {/* Scanner Status Indicator */}
@@ -400,7 +410,9 @@ export default function FingerprintScreen() {
                 </View>
 
                 <Card className="w-full mb-8 py-6 px-4 bg-primary/5 border border-primary/20">
-                    <Text className="text-sm font-medium text-gray-900 mb-2">Capture Progress</Text>
+                    <Text className="text-sm font-medium text-gray-900 mb-2">
+                        Capture Progress {currentCount < 2 ? `(${currentCount === 0 ? 'Left Thumb' : 'Right Thumb'})` : '(Complete)'}
+                    </Text>
                     <ProgressBar progress={currentCount / 2} />
                     <Text className="text-xs text-gray-500 self-end mt-2 font-medium">{currentCount} / 2 Scans</Text>
                 </Card>
@@ -494,7 +506,9 @@ export default function FingerprintScreen() {
                                     )}
                                     {!isScanning && (
                                         <View className="absolute bottom-0 w-full bg-primary/80 py-2 items-center">
-                                            <Text className="text-white text-xs font-medium">Last Capture - Place Finger Again</Text>
+                                            <Text className="text-white text-xs font-medium">
+                                                Place {currentCount === 0 ? 'LEFT' : 'RIGHT'} Thumb
+                                            </Text>
                                         </View>
                                     )}
                                 </>
@@ -510,7 +524,9 @@ export default function FingerprintScreen() {
                                         <>
                                             <ActivityIndicator size="large" color="#007AFF" className="mb-4" />
                                             <Text className="text-primary font-bold text-xl">Ready</Text>
-                                            <Text className="text-gray-400 text-xs mt-1">Place Finger on Scanner</Text>
+                                            <Text className="text-gray-400 text-xs mt-1">
+                                                Place {currentCount === 0 ? 'LEFT' : 'RIGHT'} Thumb on Scanner
+                                            </Text>
                                         </>
                                     )}
                                 </>
