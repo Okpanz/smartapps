@@ -14,7 +14,27 @@ export interface Employee {
     accountNumber: string;
     department: string;
     serviceId: string;
+    fax?: string | null;
 }
+
+const extractFax = (source: any): string | null => {
+    if (!source) return null;
+    const candidates = [
+        source,
+        source.employee,
+        source.data,
+        source.data && source.data.employee
+    ];
+    for (const cand of candidates) {
+        if (!cand) continue;
+        const v = cand as any;
+        const faxRaw = v.fax ?? v.FAX ?? null;
+        if (faxRaw != null) {
+            return String(faxRaw);
+        }
+    }
+    return null;
+};
 
 interface IdentifyResponse {
     status: string;
@@ -64,14 +84,19 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
         try {
             // Use the centralized API instance which points to smart-verify-server
             // The backend will proxy the request to the Laravel API
-            const response = await api.get<{ success: boolean, statusCode: number, message: string, data: any }>('/verification', {
+            const response = await api.get<{ success?: boolean, statusCode?: number, status?: boolean, message: string, data: any }>('/verification', {
                 params: { identifier }
             });
 
             console.log('[Verify] API Response:', JSON.stringify(response.data, null, 2));
 
-            if (response.data && response.data.success && response.data.data) {
-                const foundEmployee = response.data.data;
+            const payload = response.data;
+            const isSuccess =
+                (typeof payload.success === 'boolean' && payload.success) ||
+                (typeof payload.status === 'boolean' && payload.status);
+
+            if (payload && isSuccess && payload.data) {
+                const foundEmployee = payload.data;
                 let employeeData: any = null;
 
                 console.log('[Verify] Raw foundEmployee:', JSON.stringify(foundEmployee, null, 2));
@@ -103,6 +128,13 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
                 const accountNumber = employeeData.account_number || employeeData.accountNumber || '';
                 const department = employeeData.department || '';
                 const serviceId = employeeData.service_id || employeeData.serviceId;
+                const fax = extractFax(foundEmployee);
+
+                console.log('[Verify] Extracted fax from response:', {
+                    fax,
+                    type: typeof fax,
+                    from: foundEmployee,
+                });
 
                 // Save to local DB for future offline access
                 try {
@@ -145,7 +177,8 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
                     fullname: fullname,
                     accountNumber: accountNumber,
                     department: department,
-                    serviceId: String(serviceId || '')
+                    serviceId: String(serviceId || ''),
+                    fax
                 };
             } else {
                 const serverMsg = response.data?.message || 'No details provided';
@@ -206,15 +239,24 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
             console.log(`[Verify] Found ${results.length} match(es) in local DB`);
             // Map EmployeeRecord to Employee
             const record = results[0];
-            
-          
+
             let firstName = '';
             let lastName = '';
-            
+
             if (record.fullname) {
                 const parts = record.fullname.split(' ');
                 firstName = parts[0] || '';
                 lastName = parts.slice(1).join(' ') || '';
+            }
+
+            let fax: string | null = null;
+            if (record.raw_data) {
+                try {
+                    const raw = JSON.parse(record.raw_data as any);
+                    fax = extractFax(raw);
+                } catch {
+                    fax = null;
+                }
             }
 
             const employee: Employee = {
@@ -225,7 +267,8 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
                 fullname: record.fullname,
                 accountNumber: record.account_number,
                 department: record.department,
-                serviceId: record.service_id
+                serviceId: record.service_id,
+                fax
             };
 
             return employee;

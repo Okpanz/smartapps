@@ -51,6 +51,10 @@ export default function VerificationDocumentsScreen() {
         message: string;
         type: AlertType;
         onConfirm?: () => void;
+        showCancel?: boolean;
+        confirmText?: string;
+        cancelText?: string;
+        onCancel?: () => void;
     }>({
         visible: false,
         title: '',
@@ -58,8 +62,29 @@ export default function VerificationDocumentsScreen() {
         type: 'info'
     });
 
-    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
-        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    const showAlert = (
+        title: string,
+        message: string,
+        type: AlertType = 'info',
+        onConfirm?: () => void,
+        options?: {
+            showCancel?: boolean;
+            confirmText?: string;
+            cancelText?: string;
+            onCancel?: () => void;
+        }
+    ) => {
+        setAlertConfig({
+            visible: true,
+            title,
+            message,
+            type,
+            onConfirm,
+            showCancel: options?.showCancel,
+            confirmText: options?.confirmText,
+            cancelText: options?.cancelText,
+            onCancel: options?.onCancel,
+        });
     };
 
     const hideAlert = () => {
@@ -301,6 +326,10 @@ export default function VerificationDocumentsScreen() {
                     type={alertConfig.type}
                     onClose={hideAlert}
                     onConfirm={alertConfig.onConfirm}
+                    showCancel={alertConfig.showCancel}
+                    confirmText={alertConfig.confirmText}
+                    cancelText={alertConfig.cancelText}
+                    onCancel={alertConfig.onCancel}
                 />
             </ScrollView>
         </SafeAreaView>

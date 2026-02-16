@@ -41,6 +41,10 @@ export default function VerificationIdentifierScreen() {
         message: string;
         type: AlertType;
         onConfirm?: () => void;
+        showCancel?: boolean;
+        confirmText?: string;
+        cancelText?: string;
+        onCancel?: () => void;
     }>({
         visible: false,
         title: '',
@@ -48,8 +52,29 @@ export default function VerificationIdentifierScreen() {
         type: 'info'
     });
 
-    const showAlert = (title: string, message: string, type: AlertType = 'info', onConfirm?: () => void) => {
-        setAlertConfig({ visible: true, title, message, type, onConfirm });
+    const showAlert = (
+        title: string,
+        message: string,
+        type: AlertType = 'info',
+        onConfirm?: () => void,
+        options?: {
+            showCancel?: boolean;
+            confirmText?: string;
+            cancelText?: string;
+            onCancel?: () => void;
+        }
+    ) => {
+        setAlertConfig({
+            visible: true,
+            title,
+            message,
+            type,
+            onConfirm,
+            showCancel: options?.showCancel,
+            confirmText: options?.confirmText,
+            cancelText: options?.cancelText,
+            onCancel: options?.onCancel,
+        });
     };
 
     const hideAlert = () => {
@@ -74,8 +99,33 @@ export default function VerificationIdentifierScreen() {
         
         try {
             const employee = await verifyIdentifier(data.identifier);
+            console.log('[VerificationIdentifier] Resolved employee from verifyIdentifier:', employee);
             setEmployee(employee);
-            navigation.navigate('Details'); 
+
+            const fax = employee.fax;
+            console.log('[VerificationIdentifier] Evaluating fax for modal:', {
+                rawFax: fax,
+                faxString: fax != null ? String(fax).trim() : null,
+                condition: fax != null && String(fax).trim() == '1',
+            });
+            if (fax != null && String(fax).trim() == "1") {
+                console.log('[VerificationIdentifier] Fax condition met, showing alert');
+                showAlert(
+                    'Verification Complete',
+                    'This employee has already been verified. Do you wish to still proceed?',
+                    'warning',
+                    () => {
+                        navigation.navigate('Details');
+                    },
+                    {
+                        showCancel: true,
+                        confirmText: 'Proceed',
+                        cancelText: 'Cancel',
+                    }
+                );
+            } else {
+                navigation.navigate('Details'); 
+            }
         } catch (error: any) {
             showAlert('Verification Failed', error.message || 'Invalid Identifier', 'error');
         } finally {
@@ -92,6 +142,10 @@ export default function VerificationIdentifierScreen() {
                 type={alertConfig.type}
                 onClose={hideAlert}
                 onConfirm={alertConfig.onConfirm}
+                showCancel={alertConfig.showCancel}
+                confirmText={alertConfig.confirmText}
+                cancelText={alertConfig.cancelText}
+                onCancel={alertConfig.onCancel}
             />
             <EnhancedStepIndicator currentStep={1} totalSteps={3} stepLabels={stepLabels} />
 
