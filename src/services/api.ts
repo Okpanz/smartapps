@@ -3,8 +3,9 @@ import { EXPO_PUBLIC_API_URL } from '@env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// Create axios instance with base configuration
 const BASE_URL = EXPO_PUBLIC_API_URL || 'https://smart-verify-server.onrender.com/api';
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 1500;
 
 const api = axios.create({
     baseURL: BASE_URL,
@@ -17,7 +18,6 @@ const api = axios.create({
 
 console.log('[API] Initialized with Base URL:', api.defaults.baseURL);
 
-// Request interceptor
 api.interceptors.request.use(
     async (config) => {
         const token = await AsyncStorage.getItem('userToken');
@@ -32,15 +32,16 @@ api.interceptors.request.use(
     }
 );
 
-// Response interceptor
 api.interceptors.response.use(
     (response) => {
         return response;
     },
     async (error) => {
+        const config: any = error.config;
+
         if (error.response) {
             console.error('[API Error]', error.response.status, error.response.data);
-            
+
             if (error.response.status === 401) {
             }
         } else if (error.request) {
@@ -48,7 +49,26 @@ api.interceptors.response.use(
         } else {
             console.error('[API Error] Request setup failed', error.message);
         }
-        return Promise.reject(error);
+
+        const shouldRetry =
+            (!error.response || (error.response.status >= 500 && error.response.status < 600)) &&
+            config &&
+            !config._doNotRetry;
+
+        if (!shouldRetry) {
+            return Promise.reject(error);
+        }
+
+        config._retryCount = (config._retryCount || 0) + 1;
+
+        if (config._retryCount > MAX_RETRIES) {
+            return Promise.reject(error);
+        }
+
+        const delay = RETRY_BASE_DELAY_MS * config._retryCount;
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return api(config);
     }
 );
 

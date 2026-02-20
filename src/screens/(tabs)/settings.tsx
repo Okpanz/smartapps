@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useNavigation } from '@react-navigation/native';
-import { changePassword, downloadOfflineRecords, createAdhockStaff, clearOfflineRecords } from '../../services/auth';
+import { changePassword, downloadOfflineRecords, createAdhockStaff } from '../../services/auth';
 import { syncPendingEnrollments } from '../../services/enrollment';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
@@ -46,7 +46,6 @@ export default function SettingsScreen() {
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadPercentage, setDownloadPercentage] = useState(0);
-  const [clearingCache, setClearingCache] = useState(false);
 
   // Adhock Staff Creation State
   const [staffModalVisible, setStaffModalVisible] = useState(false);
@@ -181,32 +180,6 @@ export default function SettingsScreen() {
     } finally {
       setDownloading(false);
     }
-  };
-
-  const handleClearCache = () => {
-      showAlert(
-          'Clear Offline Cache?', 
-          'This will remove all downloaded employee records from your device. You can download them again later.',
-          'warning',
-          async () => {
-              try {
-                  setClearingCache(true);
-                  await clearOfflineRecords(user?.service_id);
-                  setSyncStatus('idle');
-                  showAlert('Success', 'Offline records cleared successfully', 'success');
-              } catch (error: any) {
-                  console.error('Clear cache failed', error);
-                  showAlert('Error', 'Failed to clear cache', 'error');
-              } finally {
-                  setClearingCache(false);
-              }
-          },
-          {
-              confirmText: 'Clear',
-              showCancel: true,
-              cancelText: 'Cancel'
-          }
-      );
   };
 
   const handleCreateStaff = async () => {
@@ -372,7 +345,7 @@ export default function SettingsScreen() {
           </Text>
 
           {/* Download Records Card */}
-          <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
+          <View className="bg-white rounded-2xl border border-gray-100 p-4">
             <View className="flex-row items-center mb-4">
               <View className={`w-10 h-10 rounded-full items-center justify-center mr-3 ${
                   syncStatus === 'error' ? 'bg-red-50' : 'bg-blue-50'
@@ -414,25 +387,10 @@ export default function SettingsScreen() {
                 }
               </Text>
             </TouchableOpacity>
-
-            {/* Clear Cache Button */}
-            <TouchableOpacity 
-                onPress={handleClearCache}
-                disabled={clearingCache || downloading || syncStatus === 'syncing'}
-                className="mt-3 items-center py-2"
-            >
-                {clearingCache ? (
-                    <ActivityIndicator size="small" color="#EF4444" />
-                ) : (
-                    <Text className="text-sm font-medium text-red-500">
-                        Clear Offline Cache
-                    </Text>
-                )}
-            </TouchableOpacity>
           </View>
 
           {/* Upload Pending Enrollments Card */}
-          <View className="bg-white rounded-2xl border border-gray-100 p-4">
+          <View className="bg-white rounded-2xl border border-gray-100 p-4 mt-4">
             <View className="flex-row items-center mb-4">
                 <View className={`w-10 h-10 rounded-full items-center justify-center mr-3 ${
                     uploadStatus === 'error' ? 'bg-red-50' : 'bg-orange-50'

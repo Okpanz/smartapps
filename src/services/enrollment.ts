@@ -24,6 +24,9 @@ interface OfflineEnrollment {
     status: 'pending' | 'syncing' | 'failed' | 'verified';
 }
 
+let syncPendingInProgress = false;
+let syncRetryTimeout: any | null = null;
+
 const convertToBase64 = async (uri: string): Promise<string> => {
     try {
         if (uri.startsWith('file://') || uri.startsWith('/')) {
@@ -79,16 +82,29 @@ export const checkPendingEnrollments = async (): Promise<void> => {
 };
 
 export const syncPendingEnrollments = async (): Promise<void> => {
+    if (syncPendingInProgress) {
+        return;
+    }
+
+    syncPendingInProgress = true;
+
     try {
         const netState = await NetInfo.fetch();
-        if (!netState.isConnected || (netState.isConnected && netState.isInternetReachable === false)) return;
+        if (netState.isConnected === false) {
+            syncPendingInProgress = false;
+            return;
+        }
 
         const existingStr = await AsyncStorage.getItem('pendingEnrollments');
-        if (!existingStr) return;
+        if (!existingStr) {
+            syncPendingInProgress = false;
+            return;
+        }
 
         let pending: OfflineEnrollment[] = JSON.parse(existingStr);
         if (pending.length === 0) {
             useAuthStore.getState().setPendingUploadsCount(0);
+            syncPendingInProgress = false;
             return;
         }
 
@@ -105,31 +121,39 @@ export const syncPendingEnrollments = async (): Promise<void> => {
                 console.log(`[Enrollment] Successfully synced ${entry.id}`);
             } catch (error) {
                 console.error(`[Enrollment] Failed to sync ${entry.id}:`, error);
-                // Keep it in the list if it failed
                 remaining.push(entry);
             }
         }
 
         await AsyncStorage.setItem('pendingEnrollments', JSON.stringify(remaining));
-        
-        // Update store
+
         useAuthStore.getState().setPendingUploadsCount(remaining.length);
-        
+
         if (remaining.length === 0) {
             useAuthStore.getState().setUploadStatus('success');
             notificationService.notifySyncStatus('completed', 'All pending uploads synced successfully.');
             setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
         } else {
             useAuthStore.getState().setUploadStatus('error');
-            notificationService.notifySyncStatus('failed', `${remaining.length} uploads failed. Will retry later.`);
-        }
-        
-        console.log(`[Enrollment] Sync complete. Remaining pending: ${remaining.length}`);
+            notificationService.notifySyncStatus('failed', `${remaining.length} uploads failed. Will retry periodically.`);
 
+            if (syncRetryTimeout) {
+                clearTimeout(syncRetryTimeout);
+            }
+
+            syncRetryTimeout = setTimeout(() => {
+                syncRetryTimeout = null;
+                syncPendingEnrollments();
+            }, 10000);
+        }
+
+        console.log(`[Enrollment] Sync complete. Remaining pending: ${remaining.length}`);
     } catch (error: any) {
         console.error('[Enrollment] Sync error:', error);
         useAuthStore.getState().setUploadStatus('error');
         notificationService.notifySyncStatus('failed', error.message || 'Sync encountered an error.');
+    } finally {
+        syncPendingInProgress = false;
     }
 };
 
