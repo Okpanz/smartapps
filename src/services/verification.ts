@@ -15,6 +15,8 @@ export interface Employee {
     department: string;
     serviceId: string;
     fax?: string | null;
+    dob?: string;
+    firstAppointmentDate?: string;
 }
 
 const extractFax = (source: any): string | null => {

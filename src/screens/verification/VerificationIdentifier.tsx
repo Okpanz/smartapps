@@ -12,6 +12,9 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import { verifyIdentifier } from '../../services/verification';
+import api from '../../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 
@@ -98,34 +101,51 @@ export default function VerificationIdentifierScreen() {
         resetEnrollment(); 
         
         try {
+            // Check flags before verifying
+            const { get, fetchForCurrentService } = useFeatureFlags.getState();
+            await fetchForCurrentService();
+            if (!get('new_verification_enabled', true) || !get('verification_general', true)) {
+                showAlert(
+                    'New Verification Disabled',
+                    'New verification is disabled for your service. Please use Resume Verification instead.',
+                    'warning',
+                    () => navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } }),
+                    { showCancel: true, confirmText: 'Go to Resume', cancelText: 'Cancel' }
+                );
+                return;
+            }
             const employee = await verifyIdentifier(data.identifier);
             console.log('[VerificationIdentifier] Resolved employee from verifyIdentifier:', employee);
             setEmployee(employee);
 
-            const fax = employee.fax;
-            console.log('[VerificationIdentifier] Evaluating fax for modal:', {
-                rawFax: fax,
-                faxString: fax != null ? String(fax).trim() : null,
-                condition: fax != null && String(fax).trim() == '1',
-            });
-            if (fax != null && String(fax).trim() == "1") {
-                console.log('[VerificationIdentifier] Fax condition met, showing alert');
-                showAlert(
-                    'Verification Complete',
-                    'This employee has already been verified. Do you wish to still proceed?',
-                    'warning',
-                    () => {
-                        navigation.navigate('Details');
-                    },
-                    {
-                        showCancel: true,
-                        confirmText: 'Proceed',
-                        cancelText: 'Cancel',
-                    }
-                );
-            } else {
-                navigation.navigate('Details'); 
+            // Guard: if an existing verification/enrollment flow exists, prompt to use Resume instead
+            try {
+                const token = await AsyncStorage.getItem('userToken');
+                const res = await api.get('/mobile/v1/enrollments/resume', {
+                    params: { employee_id: employee.identifier || employee.id },
+                    headers: { Authorization: token ? `Bearer ${token}` : '' }
+                });
+                if (res.status === 200) {
+                    showAlert(
+                        'Existing Verification Found',
+                        'A previous verification exists for this employee. Please use Resume Verification to continue.',
+                        'warning',
+                        () => {
+                            navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } });
+                        },
+                        {
+                            showCancel: true,
+                            confirmText: 'Go to Resume',
+                            cancelText: 'Cancel',
+                        }
+                    );
+                    return;
+                }
+            } catch (e: any) {
+                // If 404, no existing flow; proceed. Any other error, proceed as new.
             }
+
+            navigation.navigate('Details'); 
         } catch (error: any) {
             showAlert('Verification Failed', error.message || 'Invalid Identifier', 'error');
         } finally {

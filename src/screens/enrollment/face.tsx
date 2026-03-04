@@ -141,7 +141,7 @@ export default function FaceCaptureScreen() {
     const isFaceDetected = faces.length > 0;
     const status = {
         color: isFaceDetected ? 'border-green-500' : 'border-white',
-        message: isFaceDetected ? 'Face Detected' : 'Position your face in the frame',
+        // message: isFaceDetected ? 'Face Detected' : 'Position your face in the frame',
         bgColor: isFaceDetected ? 'bg-green-500' : 'bg-black/50',
     };
 
@@ -153,16 +153,16 @@ export default function FaceCaptureScreen() {
                 stepLabels={resumeFlow ? ['Confirm', 'Documents', 'Prints', 'Face', 'Complete'] : ['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
             />
 
-            <View className={isSmallDevice ? "flex-1 p-4" : "flex-1 p-6"}>
-                <Text className="text-2xl font-bold text-primary mb-2 text-center">Facial Capture</Text>
-                <Text className="text-base text-gray-500 text-center mb-6">
+            <View className={isSmallDevice ? "flex-1 p-3" : "flex-1 p-5"}>
+                <Text className="text-2xl font-bold text-primary mb-1.5 text-center">Facial Capture</Text>
+                <Text className="text-base text-gray-500 text-center mb-4">
                     {isComplete
                         ? "Capture complete. Please proceed."
                         : `Capture photo ${currentCount + 1} of 2`
                     }
                 </Text>
 
-                <View className="flex-1 rounded-3xl overflow-hidden bg-black mb-6 relative">
+                <View className="flex-1 rounded-3xl overflow-hidden bg-black mb-4 relative">
                     {isComplete ? (
                         <View className="flex-1 bg-background justify-center items-center">
                             <Text className="text-6xl"></Text>
@@ -199,33 +199,29 @@ export default function FaceCaptureScreen() {
                                 frameProcessor={frameProcessor}
                             />
                             <TouchableWithoutFeedback onPress={handleDoubleTap}>
-                                <View className="flex-1 justify-between items-center py-6">
+                                <View className="flex-1 items-center">
                                     {/* Status Indicator at Top */}
-                                    <View className={`px-6 py-3 rounded-full ${status.bgColor} mt-4`}>
+                                    {/* <View className={`px-6 py-3 rounded-full ${status.bgColor} mt-4`}>
                                         <Text className="text-white font-semibold text-center">
                                             {status.message}
                                         </Text>
-                                    </View>
+                                    </View> */}
 
-                                    {/* Visual Guide Oval with Dynamic Color */}
+                                    {/* Visual Guide circle with Dynamic Color */}
                                     <View
-                                        className={`w-[200px] h-[280px] border-4 ${status.color} rounded-[140px] border-dashed absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2`}
-                                        style={{
-                                            transform: [
-                                                { translateX: -100 },
-                                                { translateY: -140 },
-                                            ],
-                                        }}
+                                        className={`w-[280px] h-[280px] border-4 ${status.color} rounded-full border absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2`}
                                     />
 
                                     {/* Capture Button - Always visible */}
-                                    <TouchableOpacity
-                                        className={`w-[72px] h-[72px] rounded-full bg-white/30 items-center justify-center mb-5 ${isProcessing ? 'opacity-50' : ''}`}
-                                        onPress={takePicture}
-                                        disabled={isProcessing}
-                                    >
-                                        <View className="w-[60px] h-[60px] rounded-full bg-white" />
-                                    </TouchableOpacity>
+                                    <View className="absolute bottom-5 left-0 right-0 items-center">
+                                        <TouchableOpacity
+                                            className={`w-[72px] h-[72px] rounded-full bg-white/30 items-center justify-center ${isProcessing ? 'opacity-50' : ''}`}
+                                            onPress={takePicture}
+                                            disabled={isProcessing}
+                                        >
+                                            <View className="w-[60px] h-[60px] rounded-full bg-white" />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
                             </TouchableWithoutFeedback>
                         </View>
@@ -233,7 +229,7 @@ export default function FaceCaptureScreen() {
                 </View>
 
                 {/* Thumbnails Row */}
-                <View className="flex-row justify-center gap-4 mb-6 h-20">
+                <View className="flex-row justify-center gap-4 mb-4 h-16">
                     {images.map((uri, idx) => (
                         <View key={idx} className="relative">
                             <Image source={{ uri }} className="w-[60px] h-[80px] rounded-lg border-2 border-primary" />
@@ -250,25 +246,32 @@ export default function FaceCaptureScreen() {
                     ))}
                 </View>
 
-                <Button
-                    title="Review & Submit"
-                    onPress={handleProceed}
-                    disabled={!isComplete}
-                    variant={isComplete ? 'filled' : 'tonal'}
-                    className="mb-2"
-                />
-                <Button
-                    title="Back"
-                    onPress={() => navigation.goBack()}
-                    variant="text"
-                    className="mb-4"
-                />
-                <Button
-                    title="Skip Face Capture"
-                    onPress={handleProceed}
-                    variant="text"
-                    className="mb-4"
-                />
+                <View className="mb-2">
+                    <Button
+                        title="Review & Submit"
+                        onPress={handleProceed}
+                        disabled={!isComplete}
+                        variant={isComplete ? 'filled' : 'tonal'}
+                    />
+                </View>
+                <View className="flex-row justify-between items-center mb-2">
+                    <View className="flex-1 mr-2">
+                        <Button
+                            title="Back"
+                            onPress={() => navigation.goBack()}
+                            variant="text"
+                            className="w-full"
+                        />
+                    </View>
+                    <View className="flex-1 ml-2">
+                        <Button
+                            title="Skip Face Capture"
+                            onPress={handleProceed}
+                            variant="text"
+                            className="w-full"
+                        />
+                    </View>
+                </View>
             </View>
 
             <CustomAlert

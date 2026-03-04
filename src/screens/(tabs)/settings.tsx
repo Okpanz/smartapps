@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { isSmallDevice } from '../../utils/responsive';
+import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 
 export default function SettingsScreen() {
   const { 
@@ -42,6 +43,8 @@ export default function SettingsScreen() {
   
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const rnBiometrics = new ReactNativeBiometrics();
+  const { get, fetchForCurrentService } = useFeatureFlags();
+  React.useEffect(() => { fetchForCurrentService(); }, []);
 
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -116,6 +119,10 @@ export default function SettingsScreen() {
   };
 
   const toggleBiometric = async (value: boolean) => {
+    if (!get('biometric_enabled', false)) {
+      showAlert('Disabled', 'Biometric login is disabled for your service.', 'warning');
+      return;
+    }
     if (!value) {
       await AsyncStorage.setItem('biometricEnabled', 'false');
       setBiometricEnabled(false);

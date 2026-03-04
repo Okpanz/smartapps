@@ -15,6 +15,9 @@ import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { isSmallDevice } from '../../utils/responsive';
+import api from '../../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 
 const identifierSchema = z.object({
     identifier: z.string()
@@ -99,34 +102,46 @@ export default function IdentifierScreen() {
         // Actually resetEnrollment in store resets: employee, images, fingerprints, documents. It does NOT reset flowType. So we are good.
         
         try {
+            const { get, fetchForCurrentService } = useFeatureFlags.getState();
+            await fetchForCurrentService();
+            if (!get('new_verification_enabled', true) || !get('verification_general', true)) {
+                showAlert(
+                    'New Verification Disabled',
+                    'New verification is disabled for your service. Please use Resume Verification instead.',
+                    'warning',
+                    () => navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } }),
+                    { showCancel: true, confirmText: 'Go to Resume', cancelText: 'Cancel' }
+                );
+                return;
+            }
             const employee = await verifyIdentifier(data.identifier);
             setEmployee(employee);
 
-            const fax = employee.fax;
-            console.log('[IdentifierScreen] Evaluating fax for modal:', {
-                rawFax: fax,
-                faxString: fax != null ? String(fax).trim() : null,
-                condition: fax != null && String(fax).trim() === '1',
-            });
+            try {
+                const token = await AsyncStorage.getItem('userToken');
+                const res = await api.get('/mobile/v1/enrollments/resume', {
+                    params: { employee_id: employee.identifier || employee.id },
+                    headers: { Authorization: token ? `Bearer ${token}` : '' }
+                });
+                if (res.status === 200) {
+                    showAlert(
+                        'Existing Verification Found',
+                        'A previous verification exists for this employee. Please use Resume Verification to continue.',
+                        'warning',
+                        () => {
+                            navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } });
+                        },
+                        {
+                            showCancel: true,
+                            confirmText: 'Go to Resume',
+                            cancelText: 'Cancel',
+                        }
+                    );
+                    return;
+                }
+            } catch (e: any) {}
 
-            if (fax != null && String(fax).trim() === '1') {
-                console.log('[IdentifierScreen] Fax condition met, showing alert');
-                showAlert(
-                    'Verification Complete',
-                    'This employee has already been verified. Do you wish to still proceed?',
-                    'warning',
-                    () => {
-                        navigation.navigate('Details');
-                    },
-                    {
-                        showCancel: true,
-                        confirmText: 'Proceed',
-                        cancelText: 'Cancel',
-                    }
-                );
-            } else {
-                navigation.navigate('Details');
-            }
+            navigation.navigate('Details');
         } catch (error: any) {
             showAlert('Verification Failed', error.message || 'Invalid Identifier', 'error');
         } finally {

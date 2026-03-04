@@ -17,25 +17,28 @@ import { resumeVerification } from '../../services/enrollment';
 
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { isSmallDevice } from '../../utils/responsive';
+import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TextInput } from 'react-native';
 
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
-    const { 
-        user, 
-        logout, 
-        syncStatus, 
+    const {
+        user,
+        logout,
+        syncStatus,
         setSyncStatus,
         syncProgress,
         setSyncProgress,
         setLastSyncTime,
         pendingUploadsCount,
-        uploadStatus 
+        uploadStatus
     } = useAuthStore();
+    const { flags, fetchForCurrentService, get } = useFeatureFlags();
+
     // const setFlowType = useEnrollmentStore((state) => state.setFlowType);
-    
+
     const [recentActivities, setRecentActivities] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [stats, setStats] = useState<any[]>([
@@ -51,35 +54,37 @@ export default function DashboardScreen() {
     }, []);
 
     useEffect(() => {
+        fetchForCurrentService();
+    }, [user?.service_id]);
+    useEffect(() => {
         const performAutoSync = async () => {
-             // 1. Handle First-Time Login Auto Download
-             if (user?.is_first_device_login && user?.service_id && syncStatus === 'idle') {
-                 console.log('[Dashboard] First time login flag detected. Starting auto-download...');
-                 try {
-                     setSyncStatus('syncing');
-                     setSyncProgress(0);
-                     
-                     // Clear the flag immediately to prevent loop
-                     const updatedUser = { ...user, is_first_device_login: false };
-                     await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-                     // Note: We don't update store user immediately to avoid re-triggering this effect in a weird state,
-                     // but the next app reload will have the correct state.
-                     
+            // 1. Handle First-Time Login Auto Download
+             if (user?.is_first_device_login && user?.service_id && syncStatus === 'idle' && useFeatureFlags.getState().get('offline_record_download', true)) {
+                console.log('[Dashboard] First time login flag detected. Starting auto-download...');
+                try {
+                    setSyncStatus('syncing');
+                    setSyncProgress(0);
+
+                    // Clear the flag immediately to prevent loop
+                    const updatedUser = { ...user, is_first_device_login: false };
+                    await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
+                  
+
                      await downloadOfflineRecords((count, percentage) => {
-                         if (percentage !== undefined) {
-                             setSyncProgress(percentage);
-                         }
-                     }, user.service_id);
-                     
-                     setSyncStatus('success');
-                     setSyncProgress(100);
-                     setLastSyncTime(new Date());
-                     console.log('[Dashboard] First-time automatic download completed');
-                 } catch (error) {
-                     console.error('[Dashboard] First-time automatic download failed', error);
-                     setSyncStatus('error');
-                 }
-             }
+                        if (percentage !== undefined) {
+                            setSyncProgress(percentage);
+                        }
+                    }, user.service_id);
+
+                    setSyncStatus('success');
+                    setSyncProgress(100);
+                    setLastSyncTime(new Date());
+                    console.log('[Dashboard] First-time automatic download completed');
+                } catch (error) {
+                    console.error('[Dashboard] First-time automatic download failed', error);
+                    setSyncStatus('error');
+                }
+            }
 
             // 2. Upload Pending Enrollments (if any)
             if (pendingUploadsCount > 0 && uploadStatus === 'idle') {
@@ -170,7 +175,7 @@ export default function DashboardScreen() {
         await Promise.all([fetchActivities(), fetchStats()]);
         setRefreshing(false);
     }, []);
-    
+
     const [resumeEmployeeId, setResumeEmployeeId] = useState('');
     const [resuming, setResuming] = useState(false);
     const handleResume = async () => {
@@ -191,7 +196,7 @@ export default function DashboardScreen() {
         navigation.replace('Landing');
     };
 
-   
+
     const quickActions = [
         {
             icon: <Ionicons name="scan-outline" size={24} color="#10B981" />,
@@ -219,12 +224,21 @@ export default function DashboardScreen() {
         },
 
 
-    ];
+    ].filter((action) => {
+        if (action.route === 'DocumentVerification') {
+            // Require both general verification and new verification flow enabled
+            return get('verification_general', true) && get('document_upload', true);
+        }
+        if (action.route === 'AI') {
+            return get('ai_enabled', false);
+        }
+        return true;
+    });
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
-            <ScrollView 
-                className="flex-1" 
+            <ScrollView
+                className="flex-1"
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -240,35 +254,35 @@ export default function DashboardScreen() {
 
                     </View>
 
-                {/* Sync Progress */}
-                {syncStatus === 'syncing' && (
-                    <View className="mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
-                        <View className="flex-row justify-between items-center mb-2">
-                            <Text className="text-sm font-semibold text-green-900">Syncing Offline Records...</Text>
-                            <Text className="text-sm font-bold text-green-900">{syncProgress}%</Text>
+                    {/* Sync Progress */}
+                    {syncStatus === 'syncing' && (
+                        <View className="mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <View className="flex-row justify-between items-center mb-2">
+                                <Text className="text-sm font-semibold text-green-900">Syncing Offline Records...</Text>
+                                <Text className="text-sm font-bold text-green-900">{syncProgress}%</Text>
+                            </View>
+                            <View className="h-2 bg-green-200 rounded-full overflow-hidden">
+                                <View className="h-full bg-green-500 rounded-full" style={{ width: `${syncProgress}%` }} />
+                            </View>
                         </View>
-                        <View className="h-2 bg-green-200 rounded-full overflow-hidden">
-                            <View className="h-full bg-green-500 rounded-full" style={{ width: `${syncProgress}%` }} />
-                        </View>
-                    </View>
-                )}
+                    )}
 
-                {/* Stats Cards */}
-                <View className="flex-row flex-wrap gap-2">
-                    {stats.map((stat, index) => (
-                        <View
-                            key={index}
-                            className="bg-gray-50 rounded-xl p-3 border border-gray-200"
-                            style={{ width: isSmallDevice ? '48%' : '31%' }}
-                        >
-                            <Text className="text-[10px] text-gray-500 font-medium mb-1" numberOfLines={1}>{stat.label}</Text>
-                            <Text className="text-lg font-bold text-gray-900 mb-1">{stat.value}</Text>
-                            <Text className={`text-[10px] font-semibold ${stat.change.startsWith('+') ? 'text-green-600' : 'text-gray-400'}`}>
-                                {stat.change}
-                            </Text>
-                        </View>
-                    ))}
-                </View>
+                    {/* Stats Cards */}
+                    <View className="flex-row flex-wrap gap-2">
+                        {stats.map((stat, index) => (
+                            <View
+                                key={index}
+                                className="bg-gray-50 rounded-xl p-3 border border-gray-200"
+                                style={{ width: isSmallDevice ? '48%' : '31%' }}
+                            >
+                                <Text className="text-[10px] text-gray-500 font-medium mb-1" numberOfLines={1}>{stat.label}</Text>
+                                <Text className="text-lg font-bold text-gray-900 mb-1">{stat.value}</Text>
+                                <Text className={`text-[10px] font-semibold ${stat.change.startsWith('+') ? 'text-green-600' : 'text-gray-400'}`}>
+                                    {stat.change}
+                                </Text>
+                            </View>
+                        ))}
+                    </View>
                 </View>
 
                 {/* Main Content */}
@@ -276,13 +290,18 @@ export default function DashboardScreen() {
                     {/* Featured Action */}
                     <View className="mb-6">
                         <Text className="text-lg font-bold text-gray-900 mb-4">Start Verification</Text>
+                        {(() => {
+                            const canStartNew = get('verification_general', true) && get('new_verification_enabled', true) && get('document_upload', true);
+                            return (
                         <TouchableOpacity
                             onPress={() => {
                                 // setFlowType('enroll');
+                                if (!canStartNew) return;
                                 navigation.navigate('Enrollment', { screen: 'Identifier' });
                             }}
-                            activeOpacity={0.9}
-                            className="bg-green-600 rounded-3xl p-6"
+                            activeOpacity={canStartNew ? 0.9 : 1}
+                            disabled={!canStartNew}
+                            className={`${canStartNew ? 'bg-green-600' : 'bg-gray-300'} rounded-3xl p-6`}
                         >
                             <View className="flex-row items-center mb-4">
                                 <View className="w-12 h-12 bg-green-100 rounded-2xl items-center justify-center mr-4">
@@ -301,27 +320,55 @@ export default function DashboardScreen() {
                                 <Ionicons name="arrow-forward" size={16} color="#ffffff" className="ml-2" />
                             </View>
                         </TouchableOpacity>
+                            );
+                        })()}
                     </View>
-                    
-                    <View className="mb-6">
-                        <Text className="text-lg font-bold text-gray-900 mb-4">Resume Verification</Text>
-                        <Card className="p-4 bg-white rounded-2xl">
-                            <Text className="text-sm font-medium mb-1.5 text-gray-700">Employee ID</Text>
-                            <TextInput
-                                className="h-12 px-4 rounded-xl border bg-white text-gray-900 text-base border-gray-200"
-                                placeholder="Enter employee ID"
-                                placeholderTextColor="#9CA3AF"
-                                value={resumeEmployeeId}
-                                onChangeText={setResumeEmployeeId}
-                            />
+
+                    <View className="mb-8">
+                        <Text className="text-lg font-bold text-gray-900 mb-4">
+                            Resume Verification
+                        </Text>
+
+                        <View className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm">
+
+                            {/* Header */}
+                            <View className="flex-row items-center mb-4">
+                                <View className="w-12 h-12 bg-purple-100 rounded-2xl items-center justify-center mr-3">
+                                    <Ionicons name="refresh-circle" size={24} color="#8B5CF6" />
+                                </View>
+                                <View className="flex-1">
+                                    <Text className="text-base font-bold text-gray-900">
+                                        Continue Existing Verification
+                                    </Text>
+                                    <Text className="text-xs text-gray-500 mt-0.5">
+                                        Enter the employee ID to continue from where you stopped.
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Input */}
+                            <View className="mb-3">
+                                <TextInput
+                                    className="h-12 px-4 rounded-xl border bg-gray-50 text-gray-900 text-base border-gray-200"
+                                    placeholder="e.g. EMP-10234"
+                                    placeholderTextColor="#9CA3AF"
+                                    value={resumeEmployeeId}
+                                    onChangeText={setResumeEmployeeId}
+                                    autoCapitalize="characters"
+                                />
+                            </View>
+
+                            {/* Button */}
                             <Button
-                                title="Resume"
+                                title={resuming ? "Resuming..." : "Resume Verification"}
                                 onPress={handleResume}
                                 loading={resuming}
-                                className="mt-3"
+                                disabled={!resumeEmployeeId.trim()}
+                                className="mt-1"
                                 variant="filled"
                             />
-                        </Card>
+
+                        </View>
                     </View>
 
                     {/* Quick Actions Grid */}

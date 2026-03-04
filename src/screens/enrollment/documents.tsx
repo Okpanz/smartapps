@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -15,6 +15,7 @@ import { Input } from '../../components/ui/Input';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { isSmallDevice } from '../../utils/responsive';
+import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 
 const documentSchema = z.object({
     type: z.string().min(1, 'Document type is required'),
@@ -37,6 +38,8 @@ export default function DocumentUploadScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const resumeFlow = route.params?.resumeFlow === true;
+    const { get, fetchForCurrentService } = useFeatureFlags();
+    useEffect(() => { fetchForCurrentService(); }, []);
     
     // Use shallow selector
     const addDocument = useEnrollmentStore((state) => state.addDocument);
@@ -128,7 +131,15 @@ export default function DocumentUploadScreen() {
     };
 
     const handleFinish = () => {
-         navigation.navigate('Fingerprint', { resumeFlow: resumeFlow });
+         if (!get('document_upload', true)) {
+            showAlert('Disabled', 'Document upload is currently disabled for your service.', 'warning');
+            return;
+         }
+         if (get('fingerprint_capture_enabled', true)) {
+             navigation.navigate('Fingerprint', { resumeFlow: resumeFlow });
+         } else {
+             navigation.navigate('Face', { resumeFlow: resumeFlow });
+         }
     };
 
     return (

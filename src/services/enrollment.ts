@@ -166,6 +166,17 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
     formData.append('device_platform', Platform.OS);
     formData.append('timestamp', new Date().toISOString());
     
+    try {
+        const keptRemote = (data.images || []).filter((u) => {
+            if (!u) return false;
+            const s = String(u);
+            return (!s.startsWith('file://')) && (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/'));
+        });
+        if (keptRemote.length > 0) {
+            formData.append('existing_images', JSON.stringify(keptRemote));
+        }
+    } catch {}
+    
     if (data.employeeInfo) {
         formData.append('employee_info', JSON.stringify(data.employeeInfo));
     }
@@ -392,6 +403,8 @@ export const resumeVerification = async (employeeId: string): Promise<void> => {
         const department = rawEmp.department || '';
         const serviceId = String(rawEmp.serviceId || rawEmp.service_id || '');
         const idCandidate = rawEmp.employee_number || rawEmp.employment_number || rawEmp.employee_no || rawEmp.id || employeeId;
+        const dob = rawEmp.dob || rawEmp.date_of_birth || rawEmp.birth_date || null;
+        const fda = rawEmp.first_appointment_date || rawEmp.firstDateOfAppointment || null;
         employee = {
             id: String(idCandidate),
             identifier: String(idCandidate),
@@ -402,6 +415,8 @@ export const resumeVerification = async (employeeId: string): Promise<void> => {
             department,
             serviceId,
             fax: rawEmp.fax ?? null,
+            dob: dob ? String(dob) : undefined,
+            firstAppointmentDate: fda ? String(fda) : undefined,
         };
     }
     const images: string[] = data.images || data.faceImages || [];
@@ -425,6 +440,8 @@ export const resumeVerification = async (employeeId: string): Promise<void> => {
         };
     }).filter((d: Document) => !!d.uri);
     if (employee) useEnrollmentStore.getState().setEmployee(employee);
+    if ((employee as any)?.dob) useEnrollmentStore.getState().setDob((employee as any).dob);
+    if ((employee as any)?.firstAppointmentDate) useEnrollmentStore.getState().setFirstAppointmentDate((employee as any).firstAppointmentDate);
     useEnrollmentStore.getState().setImages(images);
     useEnrollmentStore.getState().setFingerprints(fingerprints);
     useEnrollmentStore.getState().setDocuments(documents);

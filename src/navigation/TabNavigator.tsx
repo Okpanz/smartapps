@@ -7,6 +7,7 @@ import HomeScreen from '../screens/(tabs)/index';
 import HistoryScreen from '../screens/(tabs)/history';
 import AIScreen from '../screens/(tabs)/ai';
 import SettingsScreen from '../screens/(tabs)/settings';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
 
 const Tab = createBottomTabNavigator();
 
@@ -47,6 +48,9 @@ const TabBarIcon = ({ name, color, focused, label }: { name: string; color: stri
 );
 
 export default function TabNavigator() {
+    const { get, fetchForCurrentService } = useFeatureFlags();
+    React.useEffect(() => { fetchForCurrentService(); }, []);
+    const aiEnabled = get('ai_enabled', false);
     return (
         <Tab.Navigator
             screenOptions={{
@@ -87,13 +91,15 @@ export default function TabNavigator() {
                     tabBarIcon: (props) => <TabBarIcon {...props} name="clock" label="History" />,
                 }}
             />
-            <Tab.Screen
-                name="AI"
-                component={AIScreen}
-                options={{
-                    tabBarIcon: (props) => <TabBarIcon {...props} name="message-square" label="Chat" />,
-                }}
-            />
+            {aiEnabled && (
+                <Tab.Screen
+                    name="AI"
+                    component={AIScreen}
+                    options={{
+                        tabBarIcon: (props) => <TabBarIcon {...props} name="message-square" label="Chat" />,
+                    }}
+                />
+            )}
             <Tab.Screen
                 name="Settings"
                 component={SettingsScreen}

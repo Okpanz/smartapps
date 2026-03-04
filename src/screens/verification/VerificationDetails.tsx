@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import DatePicker from '../../components/ui/DatePicker';
 import { isSmallDevice } from '../../utils/responsive';
 
 export default function VerificationDetailsScreen() {
@@ -14,8 +15,12 @@ export default function VerificationDetailsScreen() {
     const resumeFlow = route.params?.resumeFlow === true;
     const stepLabels = resumeFlow ? ['Confirm', 'Documents', 'Prints', 'Face', 'Complete'] : ['Identify', 'Verify', 'Upload'];
     
-    // Use shallow selector
+    
     const employee = useEnrollmentStore((state) => state.employee);
+    const dob = useEnrollmentStore((state) => state.dob);
+    const firstAppointmentDate = useEnrollmentStore((state) => state.firstAppointmentDate);
+    const setDob = useEnrollmentStore((state) => state.setDob);
+    const setFirstAppointmentDate = useEnrollmentStore((state) => state.setFirstAppointmentDate);
     
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -37,6 +42,11 @@ export default function VerificationDetailsScreen() {
     }, [employee]);
 
     if (!employee) return null;
+
+    const valDob = (dob || '').trim();
+    const valFda = (firstAppointmentDate || '').trim();
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    const canProceed = Boolean(valDob && valFda && re.test(valDob) && re.test(valFda));
 
     return (
         <SafeAreaView className="flex-1 bg-background">
@@ -65,12 +75,27 @@ export default function VerificationDetailsScreen() {
                     <DetailRow label="Account Number" value={employee.accountNumber} />
                     <View className="h-[1px] bg-gray-100 my-4" />
                     <DetailRow label="Department" value={employee.department} />
+                    <View className="h-[1px] bg-gray-100 my-4" />
+                    <DatePicker
+                        label="Date of Birth (YYYY-MM-DD)"
+                        value={dob || ''}
+                        onChange={(v) => setDob(v)}
+                        minYear={1940}
+                    />
+                    <View className="h-[1px] bg-gray-100 my-4" />
+                    <DatePicker
+                        label="First Date of Appointment (YYYY-MM-DD)"
+                        value={firstAppointmentDate || ''}
+                        onChange={(v) => setFirstAppointmentDate(v)}
+                        minYear={1940}
+                    />
                 </Card>
 
                 <Button
                     title="Proceed to Document Upload"
                     onPress={() => navigation.navigate('Documents', { resumeFlow: true })}
-                    variant="filled"
+                    variant={canProceed ? "filled" : "tonal"}
+                    disabled={!canProceed}
                     className="mt-4"
                 />
 

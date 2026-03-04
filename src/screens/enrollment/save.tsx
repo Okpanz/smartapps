@@ -15,7 +15,7 @@ export default function SaveScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const flow = route.params?.flow || (route.params?.resumeFlow ? 'resume' : 'enroll');
-    const { employee, images, fingerprints, skippedFingerprint, documents, resetEnrollment } = useEnrollmentStore();
+    const { employee, images, fingerprints, skippedFingerprint, documents, resetEnrollment, dob, firstAppointmentDate } = useEnrollmentStore();
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -83,9 +83,14 @@ export default function SaveScreen() {
 
         setLoading(true);
         try {
+            const employeeInfoToSend = employee ? {
+                ...employee,
+                dob: dob || (employee as any).dob,
+                first_appointment_date: firstAppointmentDate || (employee as any).firstAppointmentDate
+            } : undefined;
             await submitEnrollment({
                 employeeId: employee.id,
-                employeeInfo: employee,
+                employeeInfo: employeeInfoToSend,
                 images,
                 fingerprints,
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
@@ -152,6 +157,14 @@ export default function SaveScreen() {
                     <View className="flex-row justify-between mb-2 border-b border-gray-100 pb-1">
                         <Text className="text-sm text-gray-500">Identifier</Text>
                         <Text className="text-base font-semibold text-gray-900">{employee.identifier}</Text>
+                    </View>
+                    <View className="flex-row justify-between mb-2 border-b border-gray-100 pb-1">
+                        <Text className="text-sm text-gray-500">Date of Birth</Text>
+                        <Text className="text-base font-semibold text-gray-900">{dob || (employee as any)?.dob || 'Not provided'}</Text>
+                    </View>
+                    <View className="flex-row justify-between mb-0.5">
+                        <Text className="text-sm text-gray-500">First Date of Appointment</Text>
+                        <Text className="text-base font-semibold text-gray-900">{firstAppointmentDate || (employee as any)?.firstAppointmentDate || 'Not provided'}</Text>
                     </View>
                 </Card>
 

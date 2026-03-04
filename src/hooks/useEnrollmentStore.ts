@@ -21,6 +21,8 @@ interface EnrollmentState {
     fingerprints: FingerprintData[]; // Store fingerprint data
     skippedFingerprint: boolean;
     documents: Document[];
+    dob?: string | null;
+    firstAppointmentDate?: string | null;
     setEmployee: (employee: Employee) => void;
     setImages: (images: string[]) => void;
     addImage: (uri: string) => void;
@@ -31,6 +33,8 @@ interface EnrollmentState {
     addDocument: (document: Document) => void;
     setDocuments: (documents: Document[]) => void;
     removeDocument: (id: string) => void;
+    setDob: (dob: string | null) => void;
+    setFirstAppointmentDate: (date: string | null) => void;
     resetEnrollment: () => void;
 }
 
@@ -42,6 +46,8 @@ export const useEnrollmentStore = create<EnrollmentState>((set) => ({
     fingerprints: [],
     skippedFingerprint: false,
     documents: [],
+    dob: null,
+    firstAppointmentDate: null,
     setEmployee: (employee) => set({ employee }),
     setImages: (images) => set({ images }),
     addImage: (uri) => set((state) => ({ images: [...state.images, uri] })),
@@ -54,5 +60,7 @@ export const useEnrollmentStore = create<EnrollmentState>((set) => ({
     removeDocument: (id) => set((state) => ({
         documents: state.documents.filter(d => d.id !== id)
     })),
-    resetEnrollment: () => set({ employee: null, images: [], fingerprints: [], skippedFingerprint: false, documents: [] }),
+    setDob: (dob) => set({ dob }),
+    setFirstAppointmentDate: (date) => set({ firstAppointmentDate: date }),
+    resetEnrollment: () => set({ employee: null, images: [], fingerprints: [], skippedFingerprint: false, documents: [], dob: null, firstAppointmentDate: null }),
 }));

@@ -1,75 +1,82 @@
 import api from './api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuthStore } from '../hooks/useAuthStore';
 import { io, Socket } from 'socket.io-client';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
 
-let cache: Record<string, boolean> = {};
+export type FeatureFlagsMap = Record<string, boolean>;
 
-function getSocketBase() {
-  const base = String((api.defaults as any)?.baseURL || '');
-  if (!base) return undefined;
-  try {
-    const u = new URL(base);
-    if (u.pathname.endsWith('/api')) u.pathname = u.pathname.slice(0, -4);
-    return `${u.protocol}//${u.host}`;
-  } catch {
-    return base.replace(/\/api\/?$/, '');
-  }
-}
-
-export async function fetchFeatureFlags(serviceId?: string | number) {
+export async function fetchFeatureFlags(app?: string, serviceId?: string | number): Promise<FeatureFlagsMap> {
+  const token = await AsyncStorage.getItem('userToken');
+  const appKey = app || 'smartapps';
+  const svc = serviceId ?? useAuthStore.getState().user?.service_id;
+  const params: any = { app: appKey };
+  if (svc !== undefined && svc !== null) params.serviceId = String(svc);
   const res = await api.get('/feature-flags', {
-    params: { app: 'smartapps', ...(serviceId ? { serviceId } : {}) },
-  });
-  const list = Array.isArray(res.data?.data) ? res.data.data : [];
-  const map: Record<string, boolean> = {};
-  for (const f of list) {
-    if (f && typeof f.key === 'string') {
-      map[f.key] = Boolean(f.enabled);
+    params,
+    headers: { Authorization: token ? `Bearer ${token}` : '' },
+    _doNotRetry: true,
+  } as any);
+  const flags = res.data?.data || [];
+  console.log('[FeatureFlags]', flags);
+  const map: FeatureFlagsMap = {};
+  for (const f of flags) {
+    if (f && f.key) {
+      map[String(f.key)] = Boolean(f.enabled);
     }
   }
-  if (map['i_am_alived'] !== undefined) {
-    map['i_am_alive_enabled'] = map['i_am_alived'];
+  return map;
+}
+
+export function subscribeFeatureFlags(): () => void {
+  try {
+    const baseURL = api.defaults.baseURL || '';
+    const user = useAuthStore.getState().user;
+    const serviceId = user?.service_id ? String(user.service_id) : undefined;
+    let socketUrl: string;
+    try {
+      const u = new URL(baseURL);
+      // Always use origin (scheme+host+port), socket.io path is /socket.io
+      socketUrl = `${u.protocol}//${u.host}`;
+    } catch {
+      // Fallback: strip any path segment like /api from the end
+      const hostOnly = baseURL.replace(/^https?:\/\//, '').split('/')[0];
+      const isHttps = baseURL.startsWith('https://');
+      socketUrl = `${isHttps ? 'https://' : 'http://'}${hostOnly}`;
+    }
+    const query: any = { app: 'smartapps' };
+    if (serviceId) query.serviceId = serviceId;
+
+    const socket: Socket = io(socketUrl, {
+      transports: ['polling', 'websocket'],
+      path: '/socket.io',
+      query,
+      withCredentials: true,
+      forceNew: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      timeout: 20000,
+    });
+
+    const handler = (payload: any) => {
+      const key: string | undefined = payload?.key;
+      if (!key) return;
+      // Update local flags map
+      const { flags } = useFeatureFlags.getState();
+      const next = { ...flags, [key]: Boolean(payload?.enabled) };
+      useFeatureFlags.setState({ flags: next });
+    };
+
+    socket.on('featureFlags:changed', handler);
+    console.log('[FeatureFlags] Subscribed to featureFlags:changed');
+    return () => {
+      try {
+        socket.off('featureFlags:changed', handler);
+        console.log('[FeatureFlags] Unsubscribed from featureFlags:changed');
+        socket.close();
+      } catch {}
+    };
+  } catch {
+    return () => {};
   }
-  cache = map;
-  return cache;
-}
-
-export function isEnabled(key: string) {
-  return Boolean(cache[key]);
-}
-
-export function subscribeFeatureFlags(serviceId?: string | number) {
-  const base = getSocketBase();
-  if (!base) return () => {};
-  const socket: Socket = io(base, {
-    path: '/socket.io',
-    transports: ['polling', 'websocket'],
-    withCredentials: true,
-    forceNew: true,
-    autoConnect: true,
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 500,
-    reconnectionDelayMax: 5000,
-    timeout: 10000,
-    query: {
-      app: 'smartapps',
-      ...(serviceId ? { serviceId: String(serviceId) } : {}),
-    },
-  });
-  socket.on('featureFlags:changed', (payload: unknown) => {
-    const p = payload as { app?: unknown } | null;
-    const payloadApp = typeof p?.app === 'string' ? p.app : undefined;
-    if (payloadApp && payloadApp !== 'smartapps') return;
-    fetchFeatureFlags(serviceId).catch(() => {});
-  });
-  socket.on('connect_error', () => {
-    fetchFeatureFlags(serviceId).catch(() => {});
-  });
-  const pollId = setInterval(() => {
-    fetchFeatureFlags(serviceId).catch(() => {});
-  }, 30000);
-  return () => {
-    clearInterval(pollId);
-    socket.disconnect();
-  };
 }
