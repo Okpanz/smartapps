@@ -15,20 +15,36 @@ import ResumeVerificationNavigator from './navigation/ResumeVerificationNavigato
 import { NetworkIndicator } from './components/NetworkIndicator';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { syncPendingEnrollments } from './services/enrollment';
-import { notificationService } from './services/notification';
-import { fetchFeatureFlags, subscribeFeatureFlags } from './services/featureFlags';
+import { notificationService, subscribeNotifications } from './services/notification';
+import { subscribeFeatureFlags } from './services/featureFlags';
+import { useFeatureFlags } from './hooks/useFeatureFlags';
+import { useAuthStore } from './hooks/useAuthStore';
 const Stack = createNativeStackNavigator();
 
 export default function App() {
     console.log('[App] Rendering Root Component');
     const netInfo = useNetInfo();
     const wasOffline = React.useRef<boolean | null>(null);
+    const user = useAuthStore((s) => s.user);
+    const fetchForCurrentService = useFeatureFlags((s) => s.fetchForCurrentService);
 
     React.useEffect(() => {
-        fetchFeatureFlags().catch(() => {});
-        const unsubscribe = subscribeFeatureFlags();
-        return unsubscribe;
-    }, []);
+        fetchForCurrentService().catch(() => {});
+    }, [user?.service_id]);
+
+    React.useEffect(() => {
+        let unsubscribe = subscribeFeatureFlags();
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, [user?.service_id]);
+
+    React.useEffect(() => {
+        let unsubscribe = subscribeNotifications();
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, [user?.service_id]);
 
     React.useEffect(() => {
         // Calculate current state based on both properties

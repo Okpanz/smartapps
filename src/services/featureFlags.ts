@@ -61,7 +61,14 @@ export function subscribeFeatureFlags(): () => void {
     const handler = (payload: any) => {
       const key: string | undefined = payload?.key;
       if (!key) return;
-      // Update local flags map
+      // Filter by app and service scope
+      const payloadApp: string | undefined = typeof payload?.app === 'string' ? payload.app : undefined;
+      if (payloadApp && payloadApp !== 'smartapps') return;
+      const userSvc = useAuthStore.getState().user?.service_id ? String(useAuthStore.getState().user?.service_id) : undefined;
+      const svcMatchSingle = payload?.service_id ? String(payload.service_id) === userSvc : true;
+      const svcMatchMulti = Array.isArray(payload?.service_ids) ? payload.service_ids.map((s: any) => String(s)).includes(String(userSvc)) : true;
+      if (!(svcMatchSingle && svcMatchMulti)) return;
+      // Apply update
       const { flags } = useFeatureFlags.getState();
       const next = { ...flags, [key]: Boolean(payload?.enabled) };
       useFeatureFlags.setState({ flags: next });
