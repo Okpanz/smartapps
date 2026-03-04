@@ -22,13 +22,19 @@ interface EnrollmentState {
     skippedFingerprint: boolean;
     documents: Document[];
     setEmployee: (employee: Employee) => void;
+    setImages: (images: string[]) => void;
     addImage: (uri: string) => void;
+    removeImage: (uri: string) => void;
+    setFingerprints: (data: FingerprintData[]) => void;
     addFingerprint: (data: FingerprintData) => void;
     setSkippedFingerprint: (skipped: boolean) => void;
     addDocument: (document: Document) => void;
+    setDocuments: (documents: Document[]) => void;
     removeDocument: (id: string) => void;
     resetEnrollment: () => void;
 }
+
+
 
 export const useEnrollmentStore = create<EnrollmentState>((set) => ({
     employee: null,
@@ -37,10 +43,14 @@ export const useEnrollmentStore = create<EnrollmentState>((set) => ({
     skippedFingerprint: false,
     documents: [],
     setEmployee: (employee) => set({ employee }),
+    setImages: (images) => set({ images }),
     addImage: (uri) => set((state) => ({ images: [...state.images, uri] })),
+    removeImage: (uri) => set((state) => ({ images: state.images.filter(i => i !== uri) })),
+    setFingerprints: (data) => set({ fingerprints: data }),
     addFingerprint: (data) => set((state) => ({ fingerprints: [...state.fingerprints, data], skippedFingerprint: false })),
     setSkippedFingerprint: (skipped) => set({ skippedFingerprint: skipped }),
     addDocument: (doc) => set((state) => ({ documents: [...state.documents, doc] })),
+    setDocuments: (documents) => set({ documents }),
     removeDocument: (id) => set((state) => ({
         documents: state.documents.filter(d => d.id !== id)
     })),

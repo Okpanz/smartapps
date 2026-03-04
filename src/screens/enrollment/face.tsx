@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor, useCameraFormat } from 'react-native-vision-camera';
 import { useFaceDetector, Face } from 'react-native-vision-camera-face-detector';
 import { Worklets } from 'react-native-worklets-core';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useState, useRef, useEffect } from 'react';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
@@ -14,8 +14,11 @@ import { isSmallDevice } from '../../utils/responsive';
 
 export default function FaceCaptureScreen() {
     const navigation = useNavigation<any>();
+    const route = useRoute<any>();
+    const resumeFlow = route.params?.resumeFlow === true;
     const { hasPermission, requestPermission } = useCameraPermission();
     const addImage = useEnrollmentStore((state) => state.addImage);
+    const removeImage = useEnrollmentStore((state) => state.removeImage);
     const images = useEnrollmentStore((state) => state.images);
     const cameraRef = useRef<Camera>(null);
     const [facing, setFacing] = useState<'front' | 'back'>('front');
@@ -131,7 +134,7 @@ export default function FaceCaptureScreen() {
     };
 
     const handleProceed = () => {
-        navigation.navigate('Save');
+        navigation.navigate('Save', { resumeFlow: resumeFlow });
     };
 
     // Determine indicator color and message based on face detection
@@ -145,9 +148,9 @@ export default function FaceCaptureScreen() {
     return (
         <SafeAreaView className="flex-1 bg-background">
             <EnhancedStepIndicator 
-                currentStep={5} 
-                totalSteps={6} 
-                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+                currentStep={resumeFlow ? 4 : 5} 
+                totalSteps={resumeFlow ? 5 : 6} 
+                stepLabels={resumeFlow ? ['Confirm', 'Documents', 'Prints', 'Face', 'Complete'] : ['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
             />
 
             <View className={isSmallDevice ? "flex-1 p-4" : "flex-1 p-6"}>
@@ -232,7 +235,15 @@ export default function FaceCaptureScreen() {
                 {/* Thumbnails Row */}
                 <View className="flex-row justify-center gap-4 mb-6 h-20">
                     {images.map((uri, idx) => (
-                        <Image key={idx} source={{ uri }} className="w-[60px] h-[80px] rounded-lg border-2 border-primary" />
+                        <View key={idx} className="relative">
+                            <Image source={{ uri }} className="w-[60px] h-[80px] rounded-lg border-2 border-primary" />
+                            <TouchableOpacity
+                                onPress={() => removeImage(uri)}
+                                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-600 items-center justify-center"
+                            >
+                                <Text className="text-white text-xs">×</Text>
+                            </TouchableOpacity>
+                        </View>
                     ))}
                     {Array.from({ length: Math.max(0, 2 - images.length) }).map((_, idx) => (
                         <View key={`placeholder-${idx}`} className="w-[60px] h-[80px] rounded-lg border-2 border-dashed border-gray-300 bg-gray-100" />
@@ -245,6 +256,18 @@ export default function FaceCaptureScreen() {
                     disabled={!isComplete}
                     variant={isComplete ? 'filled' : 'tonal'}
                     className="mb-2"
+                />
+                <Button
+                    title="Back"
+                    onPress={() => navigation.goBack()}
+                    variant="text"
+                    className="mb-4"
+                />
+                <Button
+                    title="Skip Face Capture"
+                    onPress={handleProceed}
+                    variant="text"
+                    className="mb-4"
                 />
             </View>
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../../hooks/useAuthStore';
@@ -13,11 +13,13 @@ import { getDashboardStats } from '../../services/dashboard';
 import { formatDistanceToNow } from 'date-fns';
 import { downloadOfflineRecords } from '../../services/auth';
 import { checkPendingEnrollments, syncPendingEnrollments } from '../../services/enrollment';
+import { resumeVerification } from '../../services/enrollment';
 
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { isSmallDevice } from '../../utils/responsive';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { TextInput } from 'react-native';
 
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
@@ -115,8 +117,14 @@ export default function DashboardScreen() {
                 let name = 'System Activity';
                 let type = log.action;
 
-                // Map content based on action
-                if (log.action.includes('ENROLLMENT')) {
+                if (String(log.action).includes('RESUME')) {
+                    icon = 'refresh';
+                    bgIcon = 'bg-purple-100';
+                    iconColor = '#8B5CF6';
+                    name = log.details?.employeeName || 'Resume Verification';
+                    type = 'Resume Verification';
+                    statusColor = 'text-purple-600';
+                } else if (log.action.includes('ENROLLMENT')) {
                     icon = 'person-add';
                     bgIcon = 'bg-blue-100';
                     iconColor = '#3B82F6';
@@ -162,16 +170,28 @@ export default function DashboardScreen() {
         await Promise.all([fetchActivities(), fetchStats()]);
         setRefreshing(false);
     }, []);
+    
+    const [resumeEmployeeId, setResumeEmployeeId] = useState('');
+    const [resuming, setResuming] = useState(false);
+    const handleResume = async () => {
+        if (!resumeEmployeeId.trim()) return;
+        setResuming(true);
+        try {
+            await resumeVerification(resumeEmployeeId.trim());
+            navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } });
+        } catch (e) {
+            Alert.alert('Resume Failed', 'No resume data found or server error. Please check the ID and try again.');
+        } finally {
+            setResuming(false);
+        }
+    };
 
     const handleLogout = () => {
         logout();
         navigation.replace('Landing');
     };
 
-    // Stats are now state-based - fixed duplicate declaration issue
-    // const stats = [ ... ] // Removed static declaration
-
-    // Quick Actions
+   
     const quickActions = [
         {
             icon: <Ionicons name="scan-outline" size={24} color="#10B981" />,
@@ -281,6 +301,27 @@ export default function DashboardScreen() {
                                 <Ionicons name="arrow-forward" size={16} color="#ffffff" className="ml-2" />
                             </View>
                         </TouchableOpacity>
+                    </View>
+                    
+                    <View className="mb-6">
+                        <Text className="text-lg font-bold text-gray-900 mb-4">Resume Verification</Text>
+                        <Card className="p-4 bg-white rounded-2xl">
+                            <Text className="text-sm font-medium mb-1.5 text-gray-700">Employee ID</Text>
+                            <TextInput
+                                className="h-12 px-4 rounded-xl border bg-white text-gray-900 text-base border-gray-200"
+                                placeholder="Enter employee ID"
+                                placeholderTextColor="#9CA3AF"
+                                value={resumeEmployeeId}
+                                onChangeText={setResumeEmployeeId}
+                            />
+                            <Button
+                                title="Resume"
+                                onPress={handleResume}
+                                loading={resuming}
+                                className="mt-3"
+                                variant="filled"
+                            />
+                        </Card>
                     </View>
 
                     {/* Quick Actions Grid */}

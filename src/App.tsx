@@ -11,16 +11,24 @@ import LandingScreen from './screens/index';
 import TabNavigator from './navigation/TabNavigator';
 import EnrollmentNavigator from './navigation/EnrollmentNavigator';
 import DocumentVerificationNavigator from './navigation/DocumentVerificationNavigator';
+import ResumeVerificationNavigator from './navigation/ResumeVerificationNavigator';
 import { NetworkIndicator } from './components/NetworkIndicator';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { syncPendingEnrollments } from './services/enrollment';
 import { notificationService } from './services/notification';
+import { fetchFeatureFlags, subscribeFeatureFlags } from './services/featureFlags';
 const Stack = createNativeStackNavigator();
 
 export default function App() {
     console.log('[App] Rendering Root Component');
     const netInfo = useNetInfo();
     const wasOffline = React.useRef<boolean | null>(null);
+
+    React.useEffect(() => {
+        fetchFeatureFlags().catch(() => {});
+        const unsubscribe = subscribeFeatureFlags();
+        return unsubscribe;
+    }, []);
 
     React.useEffect(() => {
         // Calculate current state based on both properties
@@ -63,6 +71,7 @@ export default function App() {
                         <Stack.Screen name="Tabs" component={TabNavigator} />
                         <Stack.Screen name="Enrollment" component={EnrollmentNavigator} />
                         <Stack.Screen name="DocumentVerification" component={DocumentVerificationNavigator} />
+                        <Stack.Screen name="ResumeVerification" component={ResumeVerificationNavigator} />
                     </Stack.Navigator>
                 </NavigationContainer>
             </SafeAreaProvider>

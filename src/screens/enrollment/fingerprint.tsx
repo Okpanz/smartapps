@@ -5,7 +5,7 @@ import { View, Text, TouchableOpacity, Platform, ActivityIndicator, Modal, FlatL
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import RNFS from 'react-native-fs';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
@@ -22,7 +22,9 @@ export default function FingerprintScreen() {
     // type ScannerStatus = 'DISCONNECTED' | 'CONNECTING' | 'INITIALIZING' | 'CONNECTED' | 'SCANNING' | 'ERROR';
 
     const navigation = useNavigation<any>();
-    const { addFingerprint, fingerprints, setSkippedFingerprint, skippedFingerprint } = useEnrollmentStore();
+    const route = useRoute<any>();
+    const resumeFlow = route.params?.resumeFlow === true;
+    const { addFingerprint, fingerprints, setSkippedFingerprint, skippedFingerprint, setFingerprints } = useEnrollmentStore();
 
     const [scannerStatus, setScannerStatus] = useState<string>('DISCONNECTED');
     const [isInitializing, setIsInitializing] = useState(false);
@@ -341,7 +343,7 @@ export default function FingerprintScreen() {
     };
 
     const handleProceed = () => {
-        navigation.navigate('Face');
+        navigation.navigate('Face', { resumeFlow: resumeFlow });
     };
 
     const handleCopyLogs = async () => {
@@ -377,9 +379,9 @@ export default function FingerprintScreen() {
                 onHide={() => setToastState(prev => ({ ...prev, visible: false }))}
             />
             <EnhancedStepIndicator 
-                currentStep={4} 
-                totalSteps={6} 
-                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+                currentStep={resumeFlow ? 3 : 4} 
+                totalSteps={resumeFlow ? 5 : 6} 
+                stepLabels={resumeFlow ? ['Confirm', 'Documents', 'Prints', 'Face', 'Complete'] : ['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
             />
 
             <ScrollView 
@@ -544,6 +546,28 @@ export default function FingerprintScreen() {
                         variant={isComplete ? 'filled' : 'tonal'}
                         className="w-full"
                     />
+                    <View className="mt-2">
+                        <Button
+                            title="Back"
+                            onPress={() => navigation.goBack()}
+                            variant="text"
+                            className="w-full"
+                        />
+                    </View>
+                    {isComplete && (
+                        <View className="mt-3">
+                            <Button
+                                title="Retake Fingerprints"
+                                onPress={() => {
+                                    setFingerprints([]);
+                                    setSkippedFingerprint(false);
+                                    startScanning();
+                                }}
+                                variant="outlined"
+                                className="w-full"
+                            />
+                        </View>
+                    )}
                 </View>
 
              
@@ -603,7 +627,7 @@ export default function FingerprintScreen() {
                                 'warning',
                                 () => {
                                     setSkippedFingerprint(true);
-                                    navigation.navigate('Face');
+                                    navigation.navigate('Face', { resumeFlow: resumeFlow });
                                 },
                                 {
                                     confirmText: 'Skip',

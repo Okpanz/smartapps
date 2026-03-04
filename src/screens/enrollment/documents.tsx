@@ -36,9 +36,11 @@ const DOCUMENT_TYPES = [
 export default function DocumentUploadScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
+    const resumeFlow = route.params?.resumeFlow === true;
     
     // Use shallow selector
     const addDocument = useEnrollmentStore((state) => state.addDocument);
+    const removeDocument = useEnrollmentStore((state) => state.removeDocument);
     const documents = useEnrollmentStore((state) => state.documents);
     const employee = useEnrollmentStore((state) => state.employee);
     
@@ -126,15 +128,15 @@ export default function DocumentUploadScreen() {
     };
 
     const handleFinish = () => {
-         navigation.navigate('Fingerprint');
+         navigation.navigate('Fingerprint', { resumeFlow: resumeFlow });
     };
 
     return (
         <SafeAreaView className="flex-1 bg-background">
             <EnhancedStepIndicator 
-                currentStep={3} 
-                totalSteps={6} 
-                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+                currentStep={resumeFlow ? 2 : 3} 
+                totalSteps={resumeFlow ? 5 : 6} 
+                stepLabels={resumeFlow ? ['Confirm', 'Documents', 'Prints', 'Face', 'Complete'] : ['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
             />
 
             <ScrollView contentContainerStyle={{ padding: isSmallDevice ? 16 : 24, paddingBottom: 40 }}>
@@ -160,9 +162,17 @@ export default function DocumentUploadScreen() {
                                         {doc.type.replace(/_/g, ' ')}
                                     </Text>
                                 </View>
-                                <Text className="text-[10px] text-gray-400">
-                                    {new Date(doc.createdAt).toLocaleDateString()}
-                                </Text>
+                                <View className="flex-row items-center">
+                                    <Text className="text-[10px] text-gray-400 mr-3">
+                                        {new Date(doc.createdAt).toLocaleDateString()}
+                                    </Text>
+                                    <TouchableOpacity
+                                        onPress={() => removeDocument(doc.id)}
+                                        className="px-2 py-1 rounded-lg bg-red-50 border border-red-200"
+                                    >
+                                        <Text className="text-[10px] font-semibold text-red-600">Remove</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
                         ))}
                     </Card>

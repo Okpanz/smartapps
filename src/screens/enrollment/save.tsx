@@ -14,7 +14,7 @@ import { isSmallDevice } from '../../utils/responsive';
 export default function SaveScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
-    const flow = route.params?.flow || 'enroll';
+    const flow = route.params?.flow || (route.params?.resumeFlow ? 'resume' : 'enroll');
     const { employee, images, fingerprints, skippedFingerprint, documents, resetEnrollment } = useEnrollmentStore();
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -67,6 +67,7 @@ export default function SaveScreen() {
     const handleSubmit = async () => {
         const isBiometricComplete = images.length >= 2 && (fingerprints.length >= 2 || skippedFingerprint);
         const isScanComplete = documents.length > 0;
+        const enrollmentStatus = (images.length > 0 && documents.length > 0) ? 'VERIFIED' : 'UNVERIFIED';
 
         if (!employee) return;
 
@@ -88,7 +89,7 @@ export default function SaveScreen() {
                 images,
                 fingerprints,
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
-                status: 'ENROLLED',
+                status: enrollmentStatus,
             });
 
             showAlert(
@@ -118,9 +119,9 @@ export default function SaveScreen() {
     return (
         <SafeAreaView className="flex-1 bg-background">
             <EnhancedStepIndicator 
-                currentStep={6} 
-                totalSteps={6} 
-                stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
+                currentStep={flow === 'resume' ? 5 : 6} 
+                totalSteps={flow === 'resume' ? 5 : 6} 
+                stepLabels={flow === 'resume' ? ['Confirm', 'Documents', 'Prints', 'Face', 'Complete'] : ['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
             />
 
             <Animated.ScrollView
@@ -154,29 +155,27 @@ export default function SaveScreen() {
                     </View>
                 </Card>
 
-                {flow === 'enroll' && (
-                    <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
-                        <View className="flex-row items-center mb-4">
-                            <Ionicons name="finger-print-outline" size={24} color="#10B981" />
-                            <Text className="text-lg font-semibold text-primary ml-2">Fingerprints Captured</Text>
-                        </View>
+                <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
+                    <View className="flex-row items-center mb-4">
+                        <Ionicons name="finger-print-outline" size={24} color="#10B981" />
+                        <Text className="text-lg font-semibold text-primary ml-2">Fingerprints Captured</Text>
+                    </View>
 
-                        <View className="flex-row justify-between items-center bg-gray-50 p-4 rounded-2xl">
-                            <Text className="text-gray-500 font-medium">Captured Scans</Text>
-                            {skippedFingerprint ? (
-                                <View className="flex-row items-center">
-                                    <Text className="text-lg font-bold text-orange-500 mr-2">Skipped</Text>
-                                    <Ionicons name="alert-circle-outline" size={20} color="#F97316" />
-                                </View>
-                            ) : (
-                                <View className="flex-row items-center">
-                                    <Text className="text-lg font-bold text-primary mr-2">{fingerprints.length} / 2</Text>
-                                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                                </View>
-                            )}
-                        </View>
-                    </Card>
-                )}
+                    <View className="flex-row justify-between items-center bg-gray-50 p-4 rounded-2xl">
+                        <Text className="text-gray-500 font-medium">Captured Scans</Text>
+                        {skippedFingerprint ? (
+                            <View className="flex-row items-center">
+                                <Text className="text-lg font-bold text-orange-500 mr-2">Skipped</Text>
+                                <Ionicons name="alert-circle-outline" size={20} color="#F97316" />
+                            </View>
+                        ) : (
+                            <View className="flex-row items-center">
+                                <Text className="text-lg font-bold text-primary mr-2">{fingerprints.length} / 2</Text>
+                                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                            </View>
+                        )}
+                    </View>
+                </Card>
                 <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
                     <View className="flex-row items-center mb-4">
                         <Ionicons name="document-attach-outline" size={24} color="#10B981" />
@@ -192,33 +191,39 @@ export default function SaveScreen() {
                     </View>
                 </Card>
 
-                {flow === 'enroll' && (
-                    <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
-                        <View className="flex-row items-center mb-4">
-                            <Ionicons name="camera-outline" size={24} color="#10B981" />
-                            <Text className="text-lg font-semibold text-primary ml-2">Facial Photos Captured</Text>
-                        </View>
+                <Card variant="outlined" className={isSmallDevice ? "mb-4 p-4 rounded-3xl bg-white" : "mb-4 p-6 rounded-3xl bg-white"}>
+                    <View className="flex-row items-center mb-4">
+                        <Ionicons name="camera-outline" size={24} color="#10B981" />
+                        <Text className="text-lg font-semibold text-primary ml-2">Facial Photos Captured</Text>
+                    </View>
 
-                        <View className="items-center mb-6">
-                            <Text className="text-sm text-gray-500 mb-1">Photos</Text>
-                            <Text className="text-xl font-bold text-primary">{images.length} / 2</Text>
-                        </View>
+                    <View className="items-center mb-6">
+                        <Text className="text-sm text-gray-500 mb-1">Photos</Text>
+                        <Text className="text-xl font-bold text-primary">{images.length} / 2</Text>
+                    </View>
 
-                        <View className="flex-row gap-3 justify-center">
-                            {images.map((uri, idx) => (
-                                <View key={idx} className="items-center">
-                                    <Image
-                                        source={{ uri }}
-                                        className="w-[80px] h-[100px] rounded-xl border-2 border-primary"
-                                    />
-                                    <View className="mt-2 bg-primary/10 px-3 py-1 rounded-full">
-                                        <Text className="text-xs font-bold text-primary">Photo {idx + 1}</Text>
-                                    </View>
+                    <View className="flex-row gap-3 justify-center">
+                        {images.map((uri, idx) => (
+                            <View key={idx} className="items-center">
+                                <Image
+                                    source={{ uri }}
+                                    className="w-[80px] h-[100px] rounded-xl border-2 border-primary"
+                                />
+                                <View className="mt-2 bg-primary/10 px-3 py-1 rounded-full">
+                                    <Text className="text-xs font-bold text-primary">Photo {idx + 1}</Text>
                                 </View>
-                            ))}
-                        </View>
-                    </Card>
-                )}
+                            </View>
+                        ))}
+                    </View>
+                </Card>
+
+                <Button
+                    title="Back to Previous Step"
+                    variant="outlined"
+                    onPress={() => navigation.goBack()}
+                    disabled={loading}
+                    className="mb-2"
+                />
 
                 <Button
                     title="Submit Enrollment"
@@ -249,4 +254,3 @@ export default function SaveScreen() {
         </SafeAreaView>
     );
 }
-

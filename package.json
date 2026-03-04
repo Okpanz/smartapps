@@ -46,6 +46,7 @@
     "react-native-vision-camera-face-detector": "^1.10.1",
     "react-native-worklets": "^0.7.2",
     "react-native-worklets-core": "^1.6.2",
+    "socket.io-client": "^4.8.1",
     "tailwindcss": "^3.3.2",
     "web-streams-polyfill": "^4.2.0",
     "zod": "^4.3.5",

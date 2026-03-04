@@ -5,7 +5,7 @@ import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../hooks/useAuthStore';
-import { useEnrollmentStore, FingerprintData } from '../hooks/useEnrollmentStore';
+import { useEnrollmentStore, FingerprintData, Document } from '../hooks/useEnrollmentStore';
 import { notificationService } from './notification';
 
 interface EnrollmentData {
@@ -354,4 +354,79 @@ export const submitEnrollment = async (data: EnrollmentData): Promise<boolean> =
         console.error('[Enrollment] Submission error:', error.message);
         throw error;
     }
+};
+
+export const fetchEnrollmentByEmployeeId = async (employeeId: string): Promise<any> => {
+    const token = await AsyncStorage.getItem('userToken');
+    try {
+        const res = await api.get('/mobile/v1/enrollments/resume', {
+            params: { employee_id: employeeId },
+            headers: { Authorization: token ? `Bearer ${token}` : '' }
+        });
+        console.log('resume endpoint got the response')
+        return res.data?.data || res.data;
+    } catch (err: any) {
+        try {
+            const res2 = await api.get('/mobile/v1/enrollments', {
+                params: { employee_id: employeeId },
+                headers: { Authorization: token ? `Bearer ${token}` : '' }
+            });
+            return res2.data?.data || res2.data;
+        } catch (e) {
+            throw err;
+        }
+    }
+};
+
+export const resumeVerification = async (employeeId: string): Promise<void> => {
+    const data = await fetchEnrollmentByEmployeeId(employeeId);
+    console.log('[Enrollment] Resume data:', data);
+    const rawEmp = data.employee || data.employeeInfo || data.data?.employee || null;
+    let employee = rawEmp;
+    if (rawEmp) {
+        const fullname = rawEmp.fullname || rawEmp.full_name || rawEmp.name || '';
+        const nameParts = fullname ? String(fullname).split(' ') : [];
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        const accountNumber = rawEmp.accountNumber || rawEmp.account_number || '';
+        const department = rawEmp.department || '';
+        const serviceId = String(rawEmp.serviceId || rawEmp.service_id || '');
+        const idCandidate = rawEmp.employee_number || rawEmp.employment_number || rawEmp.employee_no || rawEmp.id || employeeId;
+        employee = {
+            id: String(idCandidate),
+            identifier: String(idCandidate),
+            firstName,
+            lastName,
+            fullname: fullname || `${firstName} ${lastName}`.trim(),
+            accountNumber,
+            department,
+            serviceId,
+            fax: rawEmp.fax ?? null,
+        };
+    }
+    const images: string[] = data.images || data.faceImages || [];
+    const fingerprintsRaw = data.fingerprints || [];
+    const documentsRaw = data.documents || [];
+    const fingerprints: FingerprintData[] = fingerprintsRaw.map((f: any) => ({
+        uri: f.uri || f.path || '',
+        type: f.type || 'Left Thumb'
+    })).filter((f: FingerprintData) => !!f.uri);
+    const documents: Document[] = documentsRaw.map((d: any) => {
+        const createdAt = d.uploadedAt ? new Date(d.uploadedAt).getTime() : Date.now();
+        let status: Document['status'] = 'SYNCED';
+        if (d.status === 2 || d.verificationStatus === 'verified') status = 'VERIFIED';
+        return {
+            id: String(d.id || Math.random().toString(36).slice(2)),
+            type: d.type || 'UNKNOWN',
+            uri: d.uri || d.path || '',
+            status,
+            uploadedBy: 'server',
+            createdAt
+        };
+    }).filter((d: Document) => !!d.uri);
+    if (employee) useEnrollmentStore.getState().setEmployee(employee);
+    useEnrollmentStore.getState().setImages(images);
+    useEnrollmentStore.getState().setFingerprints(fingerprints);
+    useEnrollmentStore.getState().setDocuments(documents);
+    useEnrollmentStore.getState().setSkippedFingerprint(!fingerprints || fingerprints.length === 0);
 };

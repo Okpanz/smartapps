@@ -44,7 +44,14 @@ export default function HistoryScreen() {
                 let name = 'System Activity';
                 let type = log.action;
 
-                if (log.action.includes('ENROLLMENT')) {
+                if (String(log.action).includes('RESUME')) {
+                    icon = 'refresh';
+                    bgIcon = 'bg-purple-100';
+                    iconColor = '#8B5CF6';
+                    name = log.details?.employeeName || 'Resume Verification';
+                    type = 'Resume Verification';
+                    statusColor = 'text-purple-600';
+                } else if (log.action.includes('ENROLLMENT')) {
                     icon = 'person-add';
                     bgIcon = 'bg-blue-100';
                     iconColor = '#3B82F6';

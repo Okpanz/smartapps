@@ -160,13 +160,14 @@ export default function VerificationDocumentsScreen() {
 
         setIsUploading(true);
         try {
+            const enrollmentStatus = (useEnrollmentStore.getState().images.length > 0 && documents.length > 0) ? 'VERIFIED' : 'UNVERIFIED';
             await submitEnrollment({
                 employeeId: employee.id,
                 employeeInfo: employee,
                 images: [],
                 fingerprints: [],
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
-                status: 'DOCUMENT SCANNING',
+                status: enrollmentStatus,
             });
 
             showAlert(

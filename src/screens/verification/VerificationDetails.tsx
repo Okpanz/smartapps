@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, SafeAreaView, Animated } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -10,7 +10,9 @@ import { isSmallDevice } from '../../utils/responsive';
 
 export default function VerificationDetailsScreen() {
     const navigation = useNavigation<any>();
-    const stepLabels = ['Identify', 'Verify', 'Upload'];
+    const route = useRoute<any>();
+    const resumeFlow = route.params?.resumeFlow === true;
+    const stepLabels = resumeFlow ? ['Confirm', 'Documents', 'Prints', 'Face', 'Complete'] : ['Identify', 'Verify', 'Upload'];
     
     // Use shallow selector
     const employee = useEnrollmentStore((state) => state.employee);
@@ -19,7 +21,12 @@ export default function VerificationDetailsScreen() {
 
     useEffect(() => {
         if (!employee) {
-            navigation.replace('Identifier');
+            const parent = navigation.getParent();
+            if (parent) {
+                parent.navigate('Enrollment', { screen: 'Identifier' });
+            } else {
+                navigation.navigate('Enrollment', { screen: 'Identifier' });
+            }
         } else {
             Animated.timing(fadeAnim, {
                 toValue: 1,
@@ -33,7 +40,7 @@ export default function VerificationDetailsScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator currentStep={2} totalSteps={3} stepLabels={stepLabels} />
+            <EnhancedStepIndicator currentStep={resumeFlow ? 1 : 2} totalSteps={resumeFlow ? 5 : 3} stepLabels={stepLabels} />
 
             <Animated.ScrollView
                 contentContainerStyle={{ padding: isSmallDevice ? 16 : 24 }}
@@ -61,8 +68,8 @@ export default function VerificationDetailsScreen() {
                 </Card>
 
                 <Button
-                    title="Proceed to Upload"
-                    onPress={() => navigation.navigate('Documents')}
+                    title="Proceed to Document Upload"
+                    onPress={() => navigation.navigate('Documents', { resumeFlow: true })}
                     variant="filled"
                     className="mt-4"
                 />
