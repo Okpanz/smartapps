@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
+import { resumeVerification } from '../../services/enrollment';
 
 const identifierSchema = z.object({
     identifier: z.string()
@@ -121,8 +122,9 @@ export default function VerificationIdentifierScreen() {
             // Guard: if an existing verification/enrollment flow exists, prompt to use Resume instead
             try {
                 const token = await AsyncStorage.getItem('userToken');
+                const resumeEmployeeId = employee.id || employee.identifier;
                 const res = await api.get('/mobile/v1/enrollments/resume', {
-                    params: { employee_id: employee.identifier || employee.id },
+                    params: { employee_id: resumeEmployeeId },
                     headers: { Authorization: token ? `Bearer ${token}` : '' }
                 });
                 if (res.status === 200) {
@@ -131,7 +133,14 @@ export default function VerificationIdentifierScreen() {
                         'A previous verification exists for this employee. Please use Resume Verification to continue.',
                         'warning',
                         () => {
-                            navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } });
+                            (async () => {
+                                try {
+                                    await resumeVerification(resumeEmployeeId);
+                                } catch {
+                                } finally {
+                                    navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } });
+                                }
+                            })();
                         },
                         {
                             showCancel: true,

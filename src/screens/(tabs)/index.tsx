@@ -42,10 +42,11 @@ export default function DashboardScreen() {
     const [recentActivities, setRecentActivities] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [stats, setStats] = useState<any[]>([
-        { label: 'Total Verified', value: '...', change: '...' },
-        { label: 'Verified', value: '...', change: '...' },
-        { label: 'Pending', value: '...', change: '...' },
+        { label: 'Total', value: '...', change: '...' },
+        { label: 'VERIFIED', value: '...', change: '...' },
+        { label: 'UNVERIFIED', value: '...', change: '...' },
         { label: 'This Month', value: '...', change: '...' },
+        {label: 'Pending', value: '...', change: '...'}
     ]);
 
     useEffect(() => {
@@ -99,11 +100,18 @@ export default function DashboardScreen() {
     const fetchStats = async () => {
         try {
             const data = await getDashboardStats();
+
+            const total = (data as any)?.total ?? (data as any)?.totalVerified ?? { value: 0, change: '0%' };
+            const verified = (data as any)?.verified ?? { value: 0, change: '0%' };
+            const unverified = (data as any)?.unverified ?? (data as any)?.pending ?? { value: 0, change: '0%' };
+            const thisMonth = (data as any)?.thisMonth ?? { value: 0, change: '0%' };
+
             setStats([
-                { label: 'Total Verified', value: data.total.value, change: data.total.change },
-                { label: 'Verified', value: data.verified.value, change: data.verified.change },
+                { label: 'Total', value: total.value, change: total.change },
+                { label: 'VERIFIED', value: verified.value, change: verified.change },
+                { label: 'UNVERIFIED', value: unverified.value, change: pendingUploadsCount > 0 ? `Local +${pendingUploadsCount}` : unverified.change },
+                { label: 'This Month', value: thisMonth.value, change: thisMonth.change },
                 { label: 'Pending', value: pendingUploadsCount.toString(), change: 'Local' },
-                { label: 'This Month', value: data.thisMonth.value, change: data.thisMonth.change },
             ]);
         } catch (error) {
             console.error('Failed to load stats', error);
@@ -291,7 +299,7 @@ export default function DashboardScreen() {
                     <View className="mb-6">
                         <Text className="text-lg font-bold text-gray-900 mb-4">Start Verification</Text>
                         {(() => {
-                            const canStartNew = get('verification_general', true) && get('new_verification_enabled', true) && get('document_upload', true);
+                            const canStartNew = get('verification_general', true) && get('new_verification_enabled', true);
                             return (
                         <TouchableOpacity
                             onPress={() => {

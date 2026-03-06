@@ -131,10 +131,6 @@ export default function DocumentUploadScreen() {
     };
 
     const handleFinish = () => {
-         if (!get('document_upload', true)) {
-            showAlert('Disabled', 'Document upload is currently disabled for your service.', 'warning');
-            return;
-         }
          if (get('fingerprint_capture_enabled', true)) {
              navigation.navigate('Fingerprint', { resumeFlow: resumeFlow });
          } else {

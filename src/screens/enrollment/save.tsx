@@ -67,7 +67,6 @@ export default function SaveScreen() {
     const handleSubmit = async () => {
         const isBiometricComplete = images.length >= 2 && (fingerprints.length >= 2 || skippedFingerprint);
         const isScanComplete = documents.length > 0;
-        const enrollmentStatus = (images.length > 0 && documents.length > 0) ? 'VERIFIED' : 'UNVERIFIED';
 
         if (!employee) return;
 
@@ -94,7 +93,6 @@ export default function SaveScreen() {
                 images,
                 fingerprints,
                 documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
-                status: enrollmentStatus,
             });
 
             showAlert(

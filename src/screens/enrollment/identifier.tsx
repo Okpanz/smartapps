@@ -18,6 +18,7 @@ import { isSmallDevice } from '../../utils/responsive';
 import api from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFeatureFlags } from '../../hooks/useFeatureFlags';
+import { resumeVerification } from '../../services/enrollment';
 
 const identifierSchema = z.object({
     identifier: z.string()
@@ -119,8 +120,9 @@ export default function IdentifierScreen() {
 
             try {
                 const token = await AsyncStorage.getItem('userToken');
+                const resumeEmployeeId = employee.id || employee.identifier;
                 const res = await api.get('/mobile/v1/enrollments/resume', {
-                    params: { employee_id: employee.identifier || employee.id },
+                    params: { employee_id: resumeEmployeeId },
                     headers: { Authorization: token ? `Bearer ${token}` : '' }
                 });
                 if (res.status === 200) {
@@ -129,7 +131,14 @@ export default function IdentifierScreen() {
                         'A previous verification exists for this employee. Please use Resume Verification to continue.',
                         'warning',
                         () => {
-                            navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } });
+                            (async () => {
+                                try {
+                                    await resumeVerification(resumeEmployeeId);
+                                } catch {
+                                } finally {
+                                    navigation.navigate('ResumeVerification', { screen: 'Details', params: { resumeFlow: true } });
+                                }
+                            })();
                         },
                         {
                             showCancel: true,

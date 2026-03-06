@@ -8,6 +8,7 @@ import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator
 import { useEffect, useRef } from 'react';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { isSmallDevice } from '../../utils/responsive';
+import DatePicker from '../../components/ui/DatePicker';
 
 export default function EmployeeDetailsScreen() {
     const navigation = useNavigation<any>();
@@ -15,6 +16,10 @@ export default function EmployeeDetailsScreen() {
     
     // Use shallow selector
     const employee = useEnrollmentStore((state) => state.employee);
+    const dob = useEnrollmentStore((state) => state.dob);
+    const firstAppointmentDate = useEnrollmentStore((state) => state.firstAppointmentDate);
+    const setDob = useEnrollmentStore((state) => state.setDob);
+    const setFirstAppointmentDate = useEnrollmentStore((state) => state.setFirstAppointmentDate);
     
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -63,6 +68,20 @@ export default function EmployeeDetailsScreen() {
                     <DetailRow label="Account Number" value={employee.accountNumber} />
                     <View className="h-[1px] bg-gray-100 my-4" />
                     <DetailRow label="Department" value={employee.department} />
+                    <View className="h-[1px] bg-gray-100 my-4" />
+                    <DatePicker
+                        label="Date of Birth (YYYY-MM-DD)"
+                        value={dob || ''}
+                        onChange={(v) => setDob(v)}
+                        minYear={1940}
+                    />
+                    <View className="h-[1px] bg-gray-100 my-4" />
+                    <DatePicker
+                        label="First Date of Appointment (YYYY-MM-DD)"
+                        value={firstAppointmentDate || ''}
+                        onChange={(v) => setFirstAppointmentDate(v)}
+                        minYear={1940}
+                    />
                 </Card>
 
                 <Button
