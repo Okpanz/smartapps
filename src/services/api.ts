@@ -3,7 +3,7 @@ import { EXPO_PUBLIC_API_URL } from '@env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const BASE_URL = EXPO_PUBLIC_API_URL || 'https://smart-verify-server.onrender.com/api';
+const BASE_URL = EXPO_PUBLIC_API_URL || 'https://api.smartverification.ng/api';
 const MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 1500;
 

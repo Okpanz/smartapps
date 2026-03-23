@@ -169,8 +169,12 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
     try {
         const keptRemote = (data.images || []).filter((u) => {
             if (!u) return false;
-            const s = String(u);
-            return (!s.startsWith('file://')) && (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/'));
+            const s = String(u).trim();
+            if (!s) return false;
+            if (s.startsWith('file://') || s.startsWith('content://')) return false;
+            if (s.startsWith('data:image/')) return false;
+            // Any non-local URI/path should be treated as an existing remote image to keep on resume
+            return true;
         });
         if (keptRemote.length > 0) {
             formData.append('existing_images', JSON.stringify(keptRemote));
@@ -190,6 +194,12 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
         for (let index = 0; index < data.images.length; index++) {
             let uri = data.images[index];
             const filename = uri.split('/').pop() || `image_${index}.jpg`;
+
+            // Only upload local files; remote URLs/paths are handled via existing_images
+            if (!(String(uri).startsWith('file://') || String(uri).startsWith('/') || String(uri).startsWith('content://'))) {
+                console.log(`[Enrollment] Skipping non-local image upload (kept as existing): ${uri}`);
+                continue;
+            }
             
             // Ensure URI format for Android
             if (Platform.OS === 'android' && !uri.startsWith('file://')) {
