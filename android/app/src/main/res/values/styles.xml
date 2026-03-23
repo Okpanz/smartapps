@@ -15,4 +15,10 @@
     <item name="postSplashScreenTheme">@style/AppTheme</item>
   </style>
 
+  <style name="SplashScreen_SplashTheme" parent="Theme.App.Splash" />
+
+  <style name="SplashScreen_Fullscreen" parent="Theme.App.Splash">
+    <item name="android:windowFullscreen">true</item>
+  </style>
+
 </resources>

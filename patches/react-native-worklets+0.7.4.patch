@@ -1,0 +1,126 @@
+diff --git a/node_modules/react-native-worklets/android/.classpath b/node_modules/react-native-worklets/android/.classpath
+new file mode 100644
+index 0000000..bbe97e5
+--- /dev/null
++++ b/node_modules/react-native-worklets/android/.classpath
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<classpath>
++	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-17/"/>
++	<classpathentry kind="con" path="org.eclipse.buildship.core.gradleclasspathcontainer"/>
++	<classpathentry kind="output" path="bin/default"/>
++</classpath>
+diff --git a/node_modules/react-native-worklets/android/.project b/node_modules/react-native-worklets/android/.project
+new file mode 100644
+index 0000000..00dff48
+--- /dev/null
++++ b/node_modules/react-native-worklets/android/.project
+@@ -0,0 +1,34 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<projectDescription>
++	<name>smartapps-android-react-native-worklets</name>
++	<comment>Project smartapps-android-react-native-worklets created by Buildship.</comment>
++	<projects>
++	</projects>
++	<buildSpec>
++		<buildCommand>
++			<name>org.eclipse.jdt.core.javabuilder</name>
++			<arguments>
++			</arguments>
++		</buildCommand>
++		<buildCommand>
++			<name>org.eclipse.buildship.core.gradleprojectbuilder</name>
++			<arguments>
++			</arguments>
++		</buildCommand>
++	</buildSpec>
++	<natures>
++		<nature>org.eclipse.jdt.core.javanature</nature>
++		<nature>org.eclipse.buildship.core.gradleprojectnature</nature>
++	</natures>
++	<filteredResources>
++		<filter>
++			<id>1774271051678</id>
++			<name></name>
++			<type>30</type>
++			<matcher>
++				<id>org.eclipse.core.resources.regexFilterMatcher</id>
++				<arguments>node_modules|\.git|__CREATED_BY_JAVA_LANGUAGE_SERVER__</arguments>
++			</matcher>
++		</filter>
++	</filteredResources>
++</projectDescription>
+diff --git a/node_modules/react-native-worklets/android/.settings/org.eclipse.buildship.core.prefs b/node_modules/react-native-worklets/android/.settings/org.eclipse.buildship.core.prefs
+new file mode 100644
+index 0000000..1675490
+--- /dev/null
++++ b/node_modules/react-native-worklets/android/.settings/org.eclipse.buildship.core.prefs
+@@ -0,0 +1,2 @@
++connection.project.dir=../../../android
++eclipse.preferences.version=1
+diff --git a/node_modules/react-native-worklets/android/build.gradle b/node_modules/react-native-worklets/android/build.gradle
+index 61c565b..6d536b4 100644
+--- a/node_modules/react-native-worklets/android/build.gradle
++++ b/node_modules/react-native-worklets/android/build.gradle
+@@ -306,8 +306,9 @@ preBuild.dependsOn(assertMinimalReactNativeVersionTask)
+ task assertNewArchitectureEnabledTask {
+     onlyIf { !IS_NEW_ARCHITECTURE_ENABLED }
+     doFirst {
+-        throw new GradleException("[Worklets] Worklets require new architecture to be enabled. Please enable it by setting `newArchEnabled` to `true` in `gradle.properties`.")
+-    }
++        logger.warn("[Worklets] newArchEnabled is disabled; skipping assertNewArchitectureEnabledTask for this project")
++return
++}
+ }
+ 
+ preBuild.dependsOn(assertNewArchitectureEnabledTask)
+diff --git a/node_modules/react-native-worklets/android/build/intermediates/prefab_package_header_only/prefab_publication.json/debug b/node_modules/react-native-worklets/android/build/intermediates/prefab_package_header_only/prefab_publication.json/debug
+new file mode 100644
+index 0000000..a6b3e6d
+--- /dev/null
++++ b/node_modules/react-native-worklets/android/build/intermediates/prefab_package_header_only/prefab_publication.json/debug
+@@ -0,0 +1,18 @@
++{
++  "installationFolder": "/Users/mac/Documents/Project Remastered/smart-apps/smartapps/node_modules/react-native-worklets/android/build/intermediates/prefab_package/debug/prefab",
++  "gradlePath": ":react-native-worklets",
++  "packageInfo": {
++    "packageName": "react-native-worklets",
++    "packageVersion": "0.7.4",
++    "packageSchemaVersion": 2,
++    "packageDependencies": [],
++    "modules": [
++      {
++        "moduleName": "worklets",
++        "moduleHeaders": "/Users/mac/Documents/Project Remastered/smart-apps/smartapps/node_modules/react-native-worklets/android/build/prefab-headers/worklets",
++        "moduleExportLibraries": [],
++        "abis": []
++      }
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/node_modules/react-native-worklets/android/build/intermediates/prefab_package_header_only/prefab_publication.json/release b/node_modules/react-native-worklets/android/build/intermediates/prefab_package_header_only/prefab_publication.json/release
+new file mode 100644
+index 0000000..dce7100
+--- /dev/null
++++ b/node_modules/react-native-worklets/android/build/intermediates/prefab_package_header_only/prefab_publication.json/release
+@@ -0,0 +1,18 @@
++{
++  "installationFolder": "/Users/mac/Documents/Project Remastered/smart-apps/smartapps/node_modules/react-native-worklets/android/build/intermediates/prefab_package/release/prefab",
++  "gradlePath": ":react-native-worklets",
++  "packageInfo": {
++    "packageName": "react-native-worklets",
++    "packageVersion": "0.7.4",
++    "packageSchemaVersion": 2,
++    "packageDependencies": [],
++    "modules": [
++      {
++        "moduleName": "worklets",
++        "moduleHeaders": "/Users/mac/Documents/Project Remastered/smart-apps/smartapps/node_modules/react-native-worklets/android/build/prefab-headers/worklets",
++        "moduleExportLibraries": [],
++        "abis": []
++      }
++    ]
++  }
++}
+\ No newline at end of file
