@@ -384,15 +384,26 @@ export const fetchEnrollmentByEmployeeId = async (employeeId: string): Promise<a
             params: { employee_id: employeeId },
             headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
-        console.log('resume endpoint got the response')
-        return res.data?.data || res.data;
+        console.log('resume endpoint got the response');
+        const data = res.data?.data || res.data;
+        if (!data || (Array.isArray(data.data) && data.data.length === 0) || !data.employee) {
+            throw new Error('No existing flow to resume');
+        }
+        return data;
     } catch (err: any) {
+        if (err.response?.status === 404 || err.message === 'No existing flow to resume') {
+            throw new Error('No existing flow to resume');
+        }
         try {
             const res2 = await api.get('/mobile/v1/enrollments', {
                 params: { employee_id: employeeId },
                 headers: { Authorization: token ? `Bearer ${token}` : '' }
             });
-            return res2.data?.data || res2.data;
+            const data2 = res2.data?.data || res2.data;
+            if (!data2 || (Array.isArray(data2.data) && data2.data.length === 0) || !data2.employee) {
+                throw new Error('No existing flow to resume');
+            }
+            return data2;
         } catch (e) {
             throw err;
         }

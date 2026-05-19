@@ -14,8 +14,11 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { isSmallDevice } from '../../utils/responsive';
 import { useFeatureFlags } from '../../hooks/useFeatureFlags';
+import api from '../../services/api';
+import { useAuthStore } from '@/hooks/useAuthStore';
 
 const documentSchema = z.object({
     type: z.string().min(1, 'Document type is required'),
@@ -24,28 +27,61 @@ const documentSchema = z.object({
 
 type DocumentForm = z.infer<typeof documentSchema>;
 
-const DOCUMENT_TYPES = [
-    // { label: 'ID Card', value: 'ID_CARD', icon: 'card-outline' },
-    { label: 'First Appointment Letter', value: 'FIRST_APPOINTMENT_LETTER', icon: 'document-text-outline' },
-    { label: 'Confirmation Letter', value: 'CONFIRMATION_LETTER', icon: 'mail-outline' },
-    { label: 'BVN', value: 'BVN', icon: 'mail-outline' },
-    { label: 'Last Promotion Letter', value: 'LAST_PROMOTION_LETTER', icon: 'trending-up-outline' },
-    { label: 'Birth Cert', value: 'BIRTH_CERTIFICATE', icon: 'trending-up-outline' },
-    { label: 'Highest Academic Qualification', value: 'HIGHEST_ACADEMIC_QUALIFICATION', icon: 'card-outline' },
-];
+interface DocumentType {
+    type: string;
+    label: string;
+    icon?: string;
+    isActive: boolean;
+    isForAllServices?: boolean;
+    visibleToServices?: number[];
+}
 
 export default function DocumentUploadScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const resumeFlow = route.params?.resumeFlow === true;
     const { get, fetchForCurrentService } = useFeatureFlags();
-    useEffect(() => { fetchForCurrentService(); }, []);
     
     // Use shallow selector
     const addDocument = useEnrollmentStore((state) => state.addDocument);
     const removeDocument = useEnrollmentStore((state) => state.removeDocument);
     const documents = useEnrollmentStore((state) => state.documents);
     const employee = useEnrollmentStore((state) => state.employee);
+    
+    const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
+    const [isLoadingTypes, setIsLoadingTypes] = useState(false);
+
+    const fetchDocumentTypes = async () => {
+        try {
+            setIsLoadingTypes(true);
+            const user = useAuthStore.getState().user;
+            const params: any = {};
+            if (user?.service_id) {
+                params.serviceId = user.service_id;
+            }
+            const response = await api.get('/document-types', { params });
+            console.log('Document types:', response.data);
+            const types = response.data?.data || response.data;
+            setDocumentTypes(types.filter((t: DocumentType) => t.isActive));
+        } catch (error) {
+            console.error('Failed to fetch document types:', error);
+            setDocumentTypes([
+                { type: 'FIRST_APPOINTMENT_LETTER', label: 'First Appointment Letter', icon: 'document-text-outline', isActive: true },
+                { type: 'CONFIRMATION_LETTER', label: 'Confirmation Letter', icon: 'mail-outline', isActive: true },
+                { type: 'BVN', label: 'BVN', icon: 'mail-outline', isActive: true },
+                { type: 'LAST_PROMOTION_LETTER', label: 'Last Promotion Letter', icon: 'trending-up-outline', isActive: true },
+                { type: 'BIRTH_CERTIFICATE', label: 'Birth Cert', icon: 'trending-up-outline', isActive: true },
+                { type: 'HIGHEST_ACADEMIC_QUALIFICATION', label: 'Highest Academic Qualification', icon: 'card-outline', isActive: true }
+            ]);
+        } finally {
+            setIsLoadingTypes(false);
+        }
+    };
+
+    useEffect(() => { 
+        fetchForCurrentService(); 
+        fetchDocumentTypes();
+    }, []);
     
     const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -188,33 +224,45 @@ export default function DocumentUploadScreen() {
                 <Card className={isSmallDevice ? "p-4 mb-6" : "p-6 mb-6"}>
                     <Text className="text-sm font-medium text-gray-700 mb-3">Select Document Type</Text>
                     <View className="flex-row flex-wrap gap-2 mb-4">
-                        {DOCUMENT_TYPES.map((type) => {
-                            const isUploaded = documents.some(doc => doc.type === type.value);
-                            return (
-                                <TouchableOpacity
-                                    key={type.value}
-                                    onPress={() => !isUploaded && setValue('type', type.value)}
-                                    disabled={isUploaded}
-                                    className={`
-                                        flex-row items-center px-4 py-2.5 rounded-full border
-                                        ${selectedType === type.value
-                                            ? 'bg-primary border-primary'
-                                            : isUploaded
-                                                ? 'bg-gray-100 border-gray-200 opacity-50'
-                                                : 'bg-white border-gray-200'}
-                                    `}
-                                >
-                                    <Ionicons
-                                        name={isUploaded ? 'checkmark-circle' : type.icon as any}
-                                        size={18}
-                                        color={selectedType === type.value ? 'white' : isUploaded ? '#10B981' : '#6B7280'}
-                                    />
-                                    <Text className={`ml-2 text-sm font-medium ${selectedType === type.value ? 'text-white' : isUploaded ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        {type.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
+                        {isLoadingTypes ? (
+                            Array.from({ length: 5 }).map((_, index) => (
+                                <Skeleton
+                                    key={index}
+                                    width={120 + Math.random() * 40}
+                                    height={36}
+                                    borderRadius={18}
+                                    className="mr-2 mb-2"
+                                />
+                            ))
+                        ) : (
+                            documentTypes.map((type) => {
+                                const isUploaded = documents.some(doc => doc.type === type.type);
+                                return (
+                                    <TouchableOpacity
+                                        key={type.type}
+                                        onPress={() => !isUploaded && setValue('type', type.type)}
+                                        disabled={isUploaded}
+                                        className={`
+                                            flex-row items-center px-4 py-2.5 rounded-full border
+                                            ${selectedType === type.type
+                                                ? 'bg-primary border-primary'
+                                                : isUploaded
+                                                    ? 'bg-gray-100 border-gray-200 opacity-50'
+                                                    : 'bg-white border-gray-200'}
+                                        `}
+                                    >
+                                        <Ionicons
+                                            name={isUploaded ? 'checkmark-circle' : (type.icon as any) || 'document-text-outline'}
+                                            size={18}
+                                            color={selectedType === type.type ? 'white' : isUploaded ? '#10B981' : '#6B7280'}
+                                        />
+                                        <Text className={`ml-2 text-sm font-medium ${selectedType === type.type ? 'text-white' : isUploaded ? 'text-gray-400' : 'text-gray-600'}`}>
+                                            {type.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })
+                        )}
                     </View>
 
                     {selectedType === 'OTHER' && (

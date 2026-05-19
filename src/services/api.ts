@@ -43,6 +43,13 @@ api.interceptors.response.use(
             console.error('[API Error]', error.response.status, error.response.data);
 
             if (error.response.status === 401) {
+                if (!config.url?.includes('/auth/sign-in')) {
+                    console.warn('[API] 401 received, clearing user data and logging out');
+                    await AsyncStorage.removeItem('userToken');
+                    await AsyncStorage.removeItem('refreshToken');
+                    await AsyncStorage.removeItem('userData');
+                    await AsyncStorage.removeItem('employeesData');
+                }
             }
         } else if (error.request) {
             console.error('[API Error] No response received', error.request);

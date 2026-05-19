@@ -142,7 +142,16 @@ export const biometricLogin = async (): Promise<User> => {
     } catch (error: any) {
         console.error('Biometric login error:', error);
         
-        // Handle Offline Fallback
+        if (error.response?.status === 401) {
+            console.error('Biometric login failed with 401, clearing user data');
+            await AsyncStorage.removeItem('userToken');
+            await AsyncStorage.removeItem('refreshToken');
+            await AsyncStorage.removeItem('userData');
+            await AsyncStorage.removeItem('employeesData');
+            throw error;
+        }
+        
+        // Handle Offline Fallback (only for network errors, not 401)
         if (error.request || error.message === 'Network Error' || error.code === 'ECONNABORTED') {
             console.log('Network error detected during biometric login, attempting offline fallback...');
             const userDataStr = await AsyncStorage.getItem('userData');
