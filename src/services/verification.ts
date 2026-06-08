@@ -17,6 +17,8 @@ export interface Employee {
     fax?: string | null;
     dob?: string;
     firstAppointmentDate?: string;
+    nin?: string;
+    bvn?: string;
 }
 
 const extractFax = (source: any): string | null => {
@@ -180,7 +182,11 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
                     accountNumber: accountNumber,
                     department: department,
                     serviceId: String(serviceId || ''),
-                    fax
+                    fax,
+                    dob: employeeData.dob || employeeData.date_of_birth || employeeData.birth_date,
+                    firstAppointmentDate: employeeData.first_appointment_date || employeeData.firstDateOfAppointment || employeeData.first_date_of_appointment,
+                    nin: employeeData.nin,
+                    bvn: employeeData.bvn
                 };
             } else {
                 const serverMsg = response.data?.message || 'No details provided';
@@ -252,10 +258,18 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
             }
 
             let fax: string | null = null;
+            let dob: string | undefined = undefined;
+            let firstAppointmentDate: string | undefined = undefined;
+            let nin: string | undefined = undefined;
+            let bvn: string | undefined = undefined;
             if (record.raw_data) {
                 try {
                     const raw = JSON.parse(record.raw_data as any);
                     fax = extractFax(raw);
+                    dob = raw.dob || raw.date_of_birth || raw.birth_date;
+                    firstAppointmentDate = raw.first_appointment_date || raw.firstDateOfAppointment || raw.first_date_of_appointment;
+                    nin = raw.nin;
+                    bvn = raw.bvn;
                 } catch {
                     fax = null;
                 }
@@ -270,7 +284,11 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
                 accountNumber: record.account_number,
                 department: record.department,
                 serviceId: record.service_id,
-                fax
+                fax,
+                dob,
+                firstAppointmentDate,
+                nin,
+                bvn
             };
 
             return employee;

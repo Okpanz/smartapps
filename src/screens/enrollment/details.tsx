@@ -20,10 +20,12 @@ export default function EmployeeDetailsScreen() {
     const dob = useEnrollmentStore((state) => state.dob);
     const firstAppointmentDate = useEnrollmentStore((state) => state.firstAppointmentDate);
     const nin = useEnrollmentStore((state) => state.nin);
+    const bvn = useEnrollmentStore((state) => state.bvn);
     const setDob = useEnrollmentStore((state) => state.setDob);
     const setFirstAppointmentDate = useEnrollmentStore((state) => state.setFirstAppointmentDate);
     const setNin = useEnrollmentStore((state) => state.setNin);
-    
+    const setBvn = useEnrollmentStore((state) => state.setBvn);
+
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -97,6 +99,18 @@ export default function EmployeeDetailsScreen() {
                         onChange={(v) => setFirstAppointmentDate(v)}
                         minYear={1940}
                     />
+                    <View className="h-[1px] bg-gray-100 my-4" />
+                    <View className="mb-4">
+                        <Text className={`text-gray-500 mb-1 ${isSmallDevice ? 'text-xs' : 'text-sm'}`}>Bank Verification Number (BVN)</Text>
+                        <TextInput
+                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 font-medium"
+                            placeholder="Enter BVN"
+                            value={bvn || ''}
+                            onChangeText={(text) => setBvn(text.replace(/[^0-9]/g, ''))}
+                            keyboardType="numeric"
+                            maxLength={12}
+                        />
+                    </View>
                 </Card>
 
                 <Button

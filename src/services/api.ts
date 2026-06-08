@@ -2,6 +2,7 @@ import axios from 'axios';
 import { EXPO_PUBLIC_API_URL } from '@env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { useAuthStore } from '../hooks/useAuthStore';
 
 const BASE_URL = EXPO_PUBLIC_API_URL || 'https://api.smartverification.ng/api';
 const MAX_RETRIES = 2;
@@ -17,6 +18,20 @@ const api = axios.create({
 });
 
 console.log('[API] Initialized with Base URL:', api.defaults.baseURL);
+
+let isRefreshing = false;
+let failedQueue: any[] = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+    failedQueue.forEach(prom => {
+        if (error) {
+            prom.reject(error);
+        } else {
+            prom.resolve(token);
+        }
+    });
+    failedQueue = [];
+};
 
 api.interceptors.request.use(
     async (config) => {
@@ -42,13 +57,61 @@ api.interceptors.response.use(
         if (error.response) {
             console.error('[API Error]', error.response.status, error.response.data);
 
-            if (error.response.status === 401) {
-                if (!config.url?.includes('/auth/sign-in')) {
-                    console.warn('[API] 401 received, clearing user data and logging out');
-                    await AsyncStorage.removeItem('userToken');
-                    await AsyncStorage.removeItem('refreshToken');
-                    await AsyncStorage.removeItem('userData');
-                    await AsyncStorage.removeItem('employeesData');
+            if (error.response.status === 401 && !config._retry) {
+                if (config.url?.includes('/auth/sign-in') || config.url?.includes('/auth/refresh-token')) {
+                    // If it's sign-in or refresh token endpoint, just reject
+                    return Promise.reject(error);
+                }
+
+                if (isRefreshing) {
+                    // If already refreshing, add to queue
+                    return new Promise((resolve, reject) => {
+                        failedQueue.push({ resolve, reject });
+                    })
+                    .then(token => {
+                        config.headers.Authorization = `Bearer ${token}`;
+                        return api(config);
+                    })
+                    .catch(err => {
+                        return Promise.reject(err);
+                    });
+                }
+
+                config._retry = true;
+                isRefreshing = true;
+
+                try {
+                    const refreshToken = await AsyncStorage.getItem('refreshToken');
+                    if (!refreshToken) {
+                        throw new Error('No refresh token available');
+                    }
+
+                    const response = await api.post('/auth/refresh-token', { refreshToken });
+                    const { token: newToken, refreshToken: newRefreshToken, user } = response.data.data;
+
+                    await AsyncStorage.setItem('userToken', newToken);
+                    if (newRefreshToken) {
+                        await AsyncStorage.setItem('refreshToken', newRefreshToken);
+                    }
+                    await AsyncStorage.setItem('userData', JSON.stringify(user));
+
+                    // Update the auth store
+                    useAuthStore.getState().login(user);
+
+                    processQueue(null, newToken);
+                    config.headers.Authorization = `Bearer ${newToken}`;
+                    return api(config);
+                } catch (refreshError) {
+                    console.error('[API] Refresh token failed:', refreshError);
+                    processQueue(refreshError, null);
+
+                    // Clear all data and log out
+                    const logout = useAuthStore.getState().logout;
+                    await logout();
+                    
+                    return Promise.reject(refreshError);
+                } finally {
+                    isRefreshing = false;
                 }
             }
         } else if (error.request) {

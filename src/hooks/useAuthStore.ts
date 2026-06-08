@@ -50,12 +50,34 @@ export const useAuthStore = create<AuthState>((set) => ({
     },
     loadUserFromStorage: async () => {
         try {
+            console.log('[AuthStore] Loading user from storage...');
+            
+            // Load user from database
             const user = await databaseService.getAppData<User>('user_profile');
-            if (user) {
+            
+            // Also check AsyncStorage for token and userData as fallback
+            const token = await AsyncStorage.getItem('userToken');
+            const userDataStr = await AsyncStorage.getItem('userData');
+            
+            if (user && token) {
+                console.log('[AuthStore] User and token found in storage, setting authenticated state');
                 set({ user, isAuthenticated: true });
+            } else if (userDataStr && token) {
+                console.log('[AuthStore] User found in AsyncStorage fallback, setting authenticated state');
+                const userData = JSON.parse(userDataStr);
+                set({ user: userData, isAuthenticated: true });
+                // Also save to database for consistency
+                await databaseService.saveAppData('user_profile', userData);
+            } else if (user && !token) {
+                console.log('[AuthStore] User found but no token - user needs to re-authenticate');
+                set({ user, isAuthenticated: false });
+            } else {
+                console.log('[AuthStore] No user or token found in storage');
+                set({ user: null, isAuthenticated: false });
             }
         } catch (error) {
             console.error('[AuthStore] Failed to load user from storage', error);
+            set({ user: null, isAuthenticated: false });
         }
     },
     setSyncStatus: (status) => set({ syncStatus: status }),

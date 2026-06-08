@@ -427,6 +427,7 @@ export const resumeVerification = async (employeeId: string): Promise<void> => {
         const dob = rawEmp.dob || rawEmp.date_of_birth || rawEmp.birth_date || null;
         const fda = rawEmp.first_appointment_date || rawEmp.firstDateOfAppointment || null;
         const nin = rawEmp.nin || null;
+        const bvn = rawEmp.bvn || null;
         employee = {
             id: String(idCandidate),
             identifier: String(idCandidate),
@@ -440,6 +441,7 @@ export const resumeVerification = async (employeeId: string): Promise<void> => {
             dob: dob ? String(dob) : undefined,
             firstAppointmentDate: fda ? String(fda) : undefined,
             nin: nin ? String(nin) : undefined,
+            bvn: bvn ? String(bvn) : undefined,
         };
     }
     const images: string[] = data.images || data.faceImages || [];
@@ -466,6 +468,7 @@ export const resumeVerification = async (employeeId: string): Promise<void> => {
     if ((employee as any)?.dob) useEnrollmentStore.getState().setDob((employee as any).dob);
     if ((employee as any)?.firstAppointmentDate) useEnrollmentStore.getState().setFirstAppointmentDate((employee as any).firstAppointmentDate);
     if ((employee as any)?.nin) useEnrollmentStore.getState().setNin((employee as any).nin);
+    if ((employee as any)?.bvn) useEnrollmentStore.getState().setBvn((employee as any).bvn);
     useEnrollmentStore.getState().setImages(images);
     useEnrollmentStore.getState().setFingerprints(fingerprints);
     useEnrollmentStore.getState().setDocuments(documents);

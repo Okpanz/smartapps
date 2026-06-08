@@ -70,18 +70,54 @@ export default function LoginScreen() {
 
     // Initial Load
     useEffect(() => {
-        loadUserFromStorage();
+        const initAuth = async () => {
+            console.log('[LoginScreen] Loading user from storage...');
+            await loadUserFromStorage();
+        };
+        initAuth();
     }, []);
 
-    // Handle Returning User State
+    // Auto-navigate if already authenticated with valid token
     useEffect(() => {
-        if (user) {
-            setIsLocked(true);
-            if (user.email || user.username) {
-                setValue('username', user.email || user.username);
+        const checkAuthAndNavigate = async () => {
+            if (user) {
+                console.log('[LoginScreen] User found in storage:', user.email || user.username);
+                
+                // Check if we have a valid token
+                const token = await AsyncStorage.getItem('userToken');
+                if (token) {
+                    console.log('[LoginScreen] Valid token found, auto-navigating to Tabs...');
+                    // Don't set locked state, just navigate directly
+                    navigation.replace('Tabs');
+                    return;
+                }
+                
+                // If no token but user exists, show locked state
+                console.log('[LoginScreen] No token found, showing locked state');
+                setIsLocked(true);
+                if (user.email || user.username) {
+                    setValue('username', user.email || user.username);
+                }
             }
+        };
+        
+        checkAuthAndNavigate();
+    }, [user]);
+
+    // Handle Returning User State (only for locked screen)
+    useEffect(() => {
+        if (user && !isLocked) {
+            const token = AsyncStorage.getItem('userToken');
+            token.then((t) => {
+                if (!t) {
+                    setIsLocked(true);
+                    if (user.email || user.username) {
+                        setValue('username', user.email || user.username);
+                    }
+                }
+            });
         }
-    }, [user, setValue]);
+    }, [user, isLocked, setValue]);
 
     // Auto-Biometric Prompt for Locked State
     useEffect(() => {
@@ -114,16 +150,25 @@ export default function LoginScreen() {
                 try {
                     const userData = await biometricLogin();
                     setAuthUser(userData);
-                    
-                    // Show offline toast/alert if we fell back to local data
-                    // We can check this by comparing userData with what we expect from a fresh login,
-                    // or simply trust that if it didn't throw, we are good.
-                    // Ideally biometricLogin could return a status flag, but for now let's just proceed.
-                    // If the user is offline, some features might not work, but they can access the app.
-                    
                     navigation.replace('Tabs');
-                } catch (apiError) {
+                } catch (apiError: any) {
                     console.error('Biometric backend auth failed', apiError);
+                    
+                    // If it's a network error, try to use cached credentials
+                    if (apiError.message === 'Network Error' || apiError.code === 'ECONNABORTED') {
+                        console.log('[LoginScreen] Network error during biometric login, checking for cached user...');
+                        const userDataStr = await AsyncStorage.getItem('userData');
+                        const token = await AsyncStorage.getItem('userToken');
+                        
+                        if (userDataStr && token) {
+                            console.log('[LoginScreen] Using cached credentials for offline access');
+                            const userData = JSON.parse(userDataStr);
+                            setAuthUser(userData);
+                            navigation.replace('Tabs');
+                            return;
+                        }
+                    }
+                    
                     showAlert('Login Failed', 'Session expired or network unavailable. Please login with password.', 'error');
                 } finally {
                     setLoading(false);

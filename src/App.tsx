@@ -26,7 +26,16 @@ export default function App() {
     const netInfo = useNetInfo();
     const wasOffline = React.useRef<boolean | null>(null);
     const user = useAuthStore((s) => s.user);
+    const loadUserFromStorage = useAuthStore((s) => s.loadUserFromStorage);
     const fetchForCurrentService = useFeatureFlags((s) => s.fetchForCurrentService);
+
+    // Initialize auth state on app mount
+    React.useEffect(() => {
+        console.log('[App] Initializing auth state...');
+        loadUserFromStorage().catch((err) => {
+            console.error('[App] Failed to load user from storage:', err);
+        });
+    }, []);
 
     React.useEffect(() => {
         fetchForCurrentService().catch(() => {});

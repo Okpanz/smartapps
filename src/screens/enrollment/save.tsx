@@ -15,7 +15,7 @@ export default function SaveScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const flow = route.params?.flow || (route.params?.resumeFlow ? 'resume' : 'enroll');
-    const { employee, images, fingerprints, skippedFingerprint, documents, resetEnrollment, dob, firstAppointmentDate, nin } = useEnrollmentStore();
+    const { employee, images, fingerprints, skippedFingerprint, documents, resetEnrollment, dob, firstAppointmentDate, nin, bvn } = useEnrollmentStore();
     const [loading, setLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -86,7 +86,8 @@ export default function SaveScreen() {
                 ...employee,
                 dob: dob || (employee as any).dob,
                 first_appointment_date: firstAppointmentDate || (employee as any).firstAppointmentDate,
-                nin: nin || (employee as any).nin
+                nin: nin || (employee as any).nin,
+                bvn: bvn || (employee as any).bvn
             } : undefined;
             await submitEnrollment({
                 employeeId: employee.id,
@@ -168,6 +169,10 @@ export default function SaveScreen() {
                     <View className="flex-row justify-between mb-0.5">
                         <Text className="text-sm text-gray-500">National Identification Number</Text>
                         <Text className="text-base font-semibold text-gray-900">{nin || (employee as any)?.nin || 'Not provided'}</Text>
+                    </View>
+                    <View className="flex-row justify-between mb-0.5">
+                        <Text className="text-sm text-gray-500">Bank Verification Number</Text>
+                        <Text className="text-base font-semibold text-gray-900">{bvn || (employee as any)?.bvn || 'Not provided'}</Text>
                     </View>
                 </Card>
 
