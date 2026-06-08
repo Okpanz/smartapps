@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, SafeAreaView, Animated } from 'react-native';
+import { View, Text, SafeAreaView, Animated, TextInput } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEnrollmentStore } from '../../hooks/useEnrollmentStore';
 import { Button } from '../../components/ui/Button';
@@ -19,8 +19,10 @@ export default function VerificationDetailsScreen() {
     const employee = useEnrollmentStore((state) => state.employee);
     const dob = useEnrollmentStore((state) => state.dob);
     const firstAppointmentDate = useEnrollmentStore((state) => state.firstAppointmentDate);
+    const nin = useEnrollmentStore((state) => state.nin);
     const setDob = useEnrollmentStore((state) => state.setDob);
     const setFirstAppointmentDate = useEnrollmentStore((state) => state.setFirstAppointmentDate);
+    const setNin = useEnrollmentStore((state) => state.setNin);
     
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -75,6 +77,18 @@ export default function VerificationDetailsScreen() {
                     <DetailRow label="Account Number" value={employee.accountNumber} />
                     <View className="h-[1px] bg-gray-100 my-4" />
                     <DetailRow label="Department" value={employee.department} />
+                    <View className="h-[1px] bg-gray-100 my-4" />
+                    <View className="mb-4">
+                        <Text className={`text-gray-500 mb-1 ${isSmallDevice ? 'text-xs' : 'text-sm'}`}>National Identification Number (NIN)</Text>
+                        <TextInput
+                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 font-medium"
+                            placeholder="Enter NIN"
+                            value={nin || ''}
+                            onChangeText={(text) => setNin(text.replace(/[^0-9]/g, ''))}
+                            keyboardType="numeric"
+                            maxLength={11}
+                        />
+                    </View>
                     <View className="h-[1px] bg-gray-100 my-4" />
                     <DatePicker
                         label="Date of Birth (YYYY-MM-DD)"

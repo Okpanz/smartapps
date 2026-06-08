@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, TextInput, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTabBarBottomInset } from '../../navigation/TabNavigator';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getRecentActivity } from '../../services/activity';
@@ -9,6 +10,7 @@ import { Calendar } from 'react-native-calendars';
 import { isSmallDevice } from '../../utils/responsive';
 
 export default function HistoryScreen() {
+    const bottomInset = useTabBarBottomInset();
     const [activities, setActivities] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [isFilterModalVisible, setFilterModalVisible] = useState(false);
@@ -239,6 +241,7 @@ export default function HistoryScreen() {
                 className={`flex-1 pt-4 ${isSmallDevice ? 'px-4' : 'px-6'}`}
                 showsVerticalScrollIndicator={false}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                contentContainerStyle={{ paddingBottom: bottomInset }}
             >
                 <View className="gap-3 pb-8">
                     {activities.length === 0 ? (

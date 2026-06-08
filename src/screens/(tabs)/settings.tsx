@@ -10,6 +10,7 @@ import {
   Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTabBarBottomInset } from '../../navigation/TabNavigator';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useNavigation } from '@react-navigation/native';
 import { changePassword, downloadOfflineRecords, createAdhockStaff } from '../../services/auth';
@@ -23,6 +24,7 @@ import { isSmallDevice } from '../../utils/responsive';
 import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 
 export default function SettingsScreen() {
+  const bottomInset = useTabBarBottomInset();
   const { 
     user, 
     logout, 
@@ -293,6 +295,7 @@ export default function SettingsScreen() {
       <ScrollView
         className={`flex-1 pt-6 ${isSmallDevice ? 'px-4' : 'px-6'}`}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: bottomInset }}
       >
         {/* PROFILE */}
         <View className="mb-10">

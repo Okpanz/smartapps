@@ -9,6 +9,7 @@ import {
   AccessibilityInfo,
   findNodeHandle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Props = {
   label: string;
@@ -61,6 +62,7 @@ export default function DatePicker({
   const maxY = maxYear || now.getFullYear();
   const triggerRef = useRef<View>(null);
   const modalRef = useRef<View>(null);
+  const insets = useSafeAreaInsets();
 
   // Validate year range
   useEffect(() => {
@@ -229,7 +231,11 @@ export default function DatePicker({
           accessibilityViewIsModal={true}
           onAccessibilityEscape={() => setVisible(false)}
         >
-          <View className="bg-white rounded-t-2xl p-4" accessibilityRole="adjustable">
+          <View 
+            className="bg-white rounded-t-2xl p-4" 
+            style={{ paddingBottom: 16 + insets.bottom }}
+            accessibilityRole="adjustable"
+          >
             <View className="flex-row justify-between items-center mb-4">
               <Text className="text-lg font-semibold text-gray-900">{label}</Text>
               <TouchableOpacity

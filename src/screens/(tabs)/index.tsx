@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useTabBarBottomInset } from '../../navigation/TabNavigator';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -24,6 +25,7 @@ import { TextInput } from 'react-native';
 
 export default function DashboardScreen() {
     const navigation = useNavigation<any>();
+    const bottomInset = useTabBarBottomInset();
     const {
         user,
         logout,
@@ -251,6 +253,7 @@ export default function DashboardScreen() {
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                 }
+                contentContainerStyle={{ paddingBottom: bottomInset }}
             >
                 {/* Header */}
                 <View className="px-6 pt-6 pb-8 bg-white">
