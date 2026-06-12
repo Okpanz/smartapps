@@ -1,88 +1,132 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../services/auth';
 import { databaseService } from '../services/database';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { tokenCache } from '../utils/tokenCache';
+import { logger } from '../utils/logger';
 
 interface AuthState {
-    user: User | null;
-    isAuthenticated: boolean;
-    syncStatus: 'idle' | 'syncing' | 'success' | 'error';
-    syncProgress: number; // 0-100
-    uploadStatus: 'idle' | 'syncing' | 'success' | 'error';
-    lastSyncTime: Date | null;
-    pendingUploadsCount: number;
-    login: (user: User) => Promise<void>;
-    logout: () => Promise<void>;
-    loadUserFromStorage: () => Promise<void>;
-    setSyncStatus: (status: 'idle' | 'syncing' | 'success' | 'error') => void;
-    setSyncProgress: (progress: number) => void;
-    setUploadStatus: (status: 'idle' | 'syncing' | 'success' | 'error') => void;
-    setLastSyncTime: (time: Date) => void;
-    setPendingUploadsCount: (count: number) => void;
+  user: User | null;
+  isAuthenticated: boolean;
+  syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+  syncProgress: number;
+  uploadStatus: 'idle' | 'syncing' | 'success' | 'error';
+  lastSyncTime: Date | null;
+  pendingUploadsCount: number;
+
+  login: (user: User) => Promise<void>;
+  logout: () => Promise<void>;
+  loadUserFromStorage: () => Promise<void>;
+  setSyncStatus: (status: AuthState['syncStatus']) => void;
+  setSyncProgress: (progress: number) => void;
+  setUploadStatus: (status: AuthState['uploadStatus']) => void;
+  setLastSyncTime: (time: Date) => void;
+  setPendingUploadsCount: (count: number) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-    user: null,
-    isAuthenticated: false,
-    syncStatus: 'idle',
-    syncProgress: 0,
-    uploadStatus: 'idle',
-    lastSyncTime: null,
-    pendingUploadsCount: 0,
-    login: async (user) => {
-        await databaseService.saveAppData('user_profile', user);
-        set({ user, isAuthenticated: true });
-    },
-    logout: async () => {
-        try {
-            await databaseService.saveAppData('user_profile', null);
-        } catch (e) {
-            console.error('[AuthStore] Failed to clear user profile from DB', e);
-        }
+  user: null,
+  isAuthenticated: false,
+  syncStatus: 'idle',
+  syncProgress: 0,
+  uploadStatus: 'idle',
+  lastSyncTime: null,
+  pendingUploadsCount: 0,
 
-        try {
-            await AsyncStorage.multiRemove(['userToken', 'userData', 'employeesData']);
-        } catch (e) {
-            console.error('[AuthStore] Failed to clear AsyncStorage', e);
-        }
+  login: async (user) => {
+    await databaseService.saveAppData('user_profile', user);
+    set({ user, isAuthenticated: true });
+  },
 
-        set({ user: null, isAuthenticated: false, syncStatus: 'idle', syncProgress: 0, uploadStatus: 'idle', lastSyncTime: null, pendingUploadsCount: 0 });
-    },
-    loadUserFromStorage: async () => {
-        try {
-            console.log('[AuthStore] Loading user from storage...');
-            
-            // Load user from database
-            const user = await databaseService.getAppData<User>('user_profile');
-            
-            // Also check AsyncStorage for token and userData as fallback
-            const token = await AsyncStorage.getItem('userToken');
-            const userDataStr = await AsyncStorage.getItem('userData');
-            
-            if (user && token) {
-                console.log('[AuthStore] User and token found in storage, setting authenticated state');
-                set({ user, isAuthenticated: true });
-            } else if (userDataStr && token) {
-                console.log('[AuthStore] User found in AsyncStorage fallback, setting authenticated state');
-                const userData = JSON.parse(userDataStr);
-                set({ user: userData, isAuthenticated: true });
-                // Also save to database for consistency
-                await databaseService.saveAppData('user_profile', userData);
-            } else if (user && !token) {
-                console.log('[AuthStore] User found but no token - user needs to re-authenticate');
-                set({ user, isAuthenticated: false });
-            } else {
-                console.log('[AuthStore] No user or token found in storage');
-                set({ user: null, isAuthenticated: false });
-            }
-        } catch (error) {
-            console.error('[AuthStore] Failed to load user from storage', error);
-            set({ user: null, isAuthenticated: false });
-        }
-    },
-    setSyncStatus: (status) => set({ syncStatus: status }),
-    setSyncProgress: (progress) => set({ syncProgress: progress }),
-    setUploadStatus: (status) => set({ uploadStatus: status }),
-    setLastSyncTime: (time) => set({ lastSyncTime: time }),
-    setPendingUploadsCount: (count) => set({ pendingUploadsCount: count }),
+  logout: async () => {
+    // Clear auth tokens from memory first
+    tokenCache.clear();
+
+    // Clear AsyncStorage — include pendingEnrollments (legacy key) to prevent
+    // data leakage when another user logs into the same device
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const keysToRemove = allKeys.filter(
+        (k) =>
+          k === 'userToken' ||
+          k === 'refreshToken' ||
+          k === 'userData' ||
+          k === 'employeesData' ||
+          k === 'pendingEnrollments' ||          // legacy offline queue
+          k.startsWith('offline_sync_cursor_') || // leftover download cursors
+          k.startsWith('sync_failure_')           // leftover cooldown timestamps
+      );
+      if (keysToRemove.length > 0) {
+        await AsyncStorage.multiRemove(keysToRemove);
+      }
+    } catch (e) {
+      logger.error('[AuthStore] Failed to clear AsyncStorage on logout', e);
+    }
+
+    // Clear SQLite — employee records and pending enrollments from this session
+    try {
+      await databaseService.saveAppData('user_profile', null);
+      await databaseService.clearDatabase();
+      await databaseService.clearAllPendingEnrollments();
+    } catch (e) {
+      logger.error('[AuthStore] Failed to clear SQLite on logout', e);
+    }
+
+    set({
+      user: null,
+      isAuthenticated: false,
+      syncStatus: 'idle',
+      syncProgress: 0,
+      uploadStatus: 'idle',
+      lastSyncTime: null,
+      pendingUploadsCount: 0,
+    });
+  },
+
+  loadUserFromStorage: async () => {
+    try {
+      logger.debug('[AuthStore] Loading user from storage');
+
+      const [token, userDataStr] = await Promise.all([
+        AsyncStorage.getItem('userToken'),
+        AsyncStorage.getItem('userData'),
+      ]);
+
+      // Populate in-memory token cache so subsequent API requests skip disk I/O
+      if (token) tokenCache.set(token);
+
+      // Prefer SQLite-persisted profile; fall back to AsyncStorage
+      const dbUser = await databaseService.getAppData<User>('user_profile');
+
+      if (dbUser && token) {
+        set({ user: dbUser, isAuthenticated: true });
+        return;
+      }
+
+      if (userDataStr && token) {
+        const userData: User = JSON.parse(userDataStr);
+        set({ user: userData, isAuthenticated: true });
+        // Backfill SQLite for consistency
+        await databaseService.saveAppData('user_profile', userData);
+        return;
+      }
+
+      if (dbUser && !token) {
+        // Profile exists but token is gone — require re-authentication
+        set({ user: dbUser, isAuthenticated: false });
+        return;
+      }
+
+      set({ user: null, isAuthenticated: false });
+    } catch (error) {
+      logger.error('[AuthStore] Failed to load user from storage', error);
+      set({ user: null, isAuthenticated: false });
+    }
+  },
+
+  setSyncStatus: (syncStatus) => set({ syncStatus }),
+  setSyncProgress: (syncProgress) => set({ syncProgress }),
+  setUploadStatus: (uploadStatus) => set({ uploadStatus }),
+  setLastSyncTime: (lastSyncTime) => set({ lastSyncTime }),
+  setPendingUploadsCount: (pendingUploadsCount) => set({ pendingUploadsCount }),
 }));

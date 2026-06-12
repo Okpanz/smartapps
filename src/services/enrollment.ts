@@ -1,476 +1,547 @@
-import api from './api';
 import { Platform } from 'react-native';
-import axios from 'axios';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import api from './api';
+import { databaseService } from './database';
+import { notificationService } from './notification';
+import { tokenCache } from '../utils/tokenCache';
+import { logger } from '../utils/logger';
 import { useAuthStore } from '../hooks/useAuthStore';
 import { useEnrollmentStore, FingerprintData, Document } from '../hooks/useEnrollmentStore';
-import { notificationService } from './notification';
+
+// ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface EnrollmentData {
-    employeeId: string;
-    employeeInfo?: any;
-    images: string[];
-    fingerprints: FingerprintData[];
-    documents?: Array<{ uri: string; type: string }>;
-    status?: string;
+  employeeId: string;
+  employeeInfo?: any;
+  images: string[];
+  fingerprints: FingerprintData[];
+  documents?: Array<{ uri: string; type: string }>;
+  status?: string;
 }
 
-interface OfflineEnrollment {
-    id: string;
-    data: EnrollmentData;
-    timestamp: number;
-    status: 'pending' | 'syncing' | 'failed' | 'verified';
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const MAX_RETRIES = 5;
+const RETRY_INTERVAL_MS = 10_000;
+const ENROLLMENT_DIR = `${RNFS.DocumentDirectoryPath}/enrollments`;
+
+// ─── Module-level sync guard ──────────────────────────────────────────────────
 
 let syncPendingInProgress = false;
-let syncRetryTimeout: any | null = null;
+let syncRetryTimeout: ReturnType<typeof setTimeout> | null = null;
 
-const convertToBase64 = async (uri: string): Promise<string> => {
-    try {
-        if (uri.startsWith('file://') || uri.startsWith('/')) {
-             return await RNFS.readFile(uri, 'base64');
-        }
-        return uri;
-    } catch (error) {
-        console.error('Error converting to base64:', error);
-        throw error;
-    }
+// ─── File helpers ─────────────────────────────────────────────────────────────
+
+const ensureEnrollmentDir = async (): Promise<void> => {
+  if (!(await RNFS.exists(ENROLLMENT_DIR))) {
+    await RNFS.mkdir(ENROLLMENT_DIR);
+  }
 };
+
+/**
+ * Copies a file URI into the app's permanent DocumentDirectory so it survives
+ * cache eviction and app restarts. Returns the new `file://` URI.
+ * If the file is already in DocumentDirectory or the source is missing, returns
+ * the original URI unchanged (callers must handle the missing-file case).
+ */
+const copyToDocumentDir = async (uri: string, prefix: string): Promise<string> => {
+  if (!uri) return uri;
+
+  // Already in permanent storage — nothing to do
+  if (uri.includes(RNFS.DocumentDirectoryPath)) return uri;
+
+  // Strip file:// for RNFS operations
+  const srcPath = uri.replace(/^file:\/\//, '');
+
+  if (!(await RNFS.exists(srcPath))) {
+    throw new Error(`Source file not found: ${uri}`);
+  }
+
+  await ensureEnrollmentDir();
+
+  const ext = srcPath.split('.').pop() || 'jpg';
+  const destPath = `${ENROLLMENT_DIR}/${prefix}_${Date.now()}.${ext}`;
+  await RNFS.copyFile(srcPath, destPath);
+  return `file://${destPath}`;
+};
+
+/**
+ * Copies every captured file (face images, fingerprints, documents) to
+ * DocumentDirectory before persisting offline. This ensures URIs survive
+ * OS cache eviction during the offline period.
+ */
+const persistEnrollmentFiles = async (data: EnrollmentData): Promise<EnrollmentData> => {
+  const copyWithFallback = async (uri: string, prefix: string): Promise<string> => {
+    try {
+      return await copyToDocumentDir(uri, prefix);
+    } catch (err) {
+      logger.warn('[Enrollment] Could not copy file to DocumentDir:', uri, err);
+      return uri; // keep original so the entry is not silently corrupted
+    }
+  };
+
+  const copiedImages = await Promise.all(
+    (data.images || []).map((uri, i) => copyWithFallback(uri, `face_${i}`))
+  );
+
+  const copiedFingerprints = await Promise.all(
+    (data.fingerprints || []).map(async (fp, i) => {
+      const uri = typeof fp === 'string' ? fp : fp.uri;
+      const type = typeof fp === 'string' ? 'Unknown' : fp.type;
+      const newUri = await copyWithFallback(uri, `fp_${i}`);
+      return { uri: newUri, type } as FingerprintData;
+    })
+  );
+
+  const copiedDocuments = await Promise.all(
+    (data.documents || []).map(async (doc, i) => ({
+      ...doc,
+      uri: await copyWithFallback(doc.uri, `doc_${i}`),
+    }))
+  );
+
+  return {
+    ...data,
+    images: copiedImages,
+    fingerprints: copiedFingerprints,
+    documents: copiedDocuments,
+  };
+};
+
+// ─── Legacy migration ─────────────────────────────────────────────────────────
+
+/**
+ * One-time migration: moves any enrollments that were stored as a JSON blob in
+ * AsyncStorage into the new SQLite pending_enrollments table, then clears the
+ * old key. Runs silently — failure does not block sync.
+ */
+const migrateLegacyPendingEnrollments = async (): Promise<void> => {
+  try {
+    const raw = await AsyncStorage.getItem('pendingEnrollments');
+    if (!raw) return;
+
+    const legacy = JSON.parse(raw);
+    if (!Array.isArray(legacy) || legacy.length === 0) {
+      await AsyncStorage.removeItem('pendingEnrollments');
+      return;
+    }
+
+    logger.debug(`[Enrollment] Migrating ${legacy.length} legacy enrollments to SQLite`);
+    for (const entry of legacy) {
+      await databaseService.savePendingEnrollment(
+        entry.id,
+        entry.data,
+        entry.timestamp || Date.now()
+      );
+    }
+    await AsyncStorage.removeItem('pendingEnrollments');
+    logger.debug('[Enrollment] Legacy migration complete');
+  } catch (err) {
+    logger.warn('[Enrollment] Legacy migration failed (non-fatal):', err);
+  }
+};
+
+// ─── Offline save ─────────────────────────────────────────────────────────────
 
 const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => {
-    try {
-        console.log('[Enrollment] Saving enrollment offline for:', data.employeeId);
-        
-        const offlineId = `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const offlineEntry: OfflineEnrollment = {
-            id: offlineId,
-            data: data,
-            timestamp: Date.now(),
-            status: 'pending'
-        };
+  logger.debug('[Enrollment] Saving offline for:', data.employeeId);
 
-        const existingStr = await AsyncStorage.getItem('pendingEnrollments');
-        let pending: OfflineEnrollment[] = existingStr ? JSON.parse(existingStr) : [];
-        
-        pending.push(offlineEntry);
-        
-        await AsyncStorage.setItem('pendingEnrollments', JSON.stringify(pending));
-        console.log(`[Enrollment] Saved offline. Total pending: ${pending.length}`);
-        
-        notificationService.notifyOfflineUploadSaved();
+  // Copy all captured files to permanent storage before persisting URIs
+  const persistedData = await persistEnrollmentFiles(data);
 
-        // Update store count
-        useAuthStore.getState().setPendingUploadsCount(pending.length);
-        
-        return true;
-    } catch (error) {
-        console.error('[Enrollment] Failed to save offline:', error);
-        throw error;
-    }
+  const id = `offline_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  await databaseService.savePendingEnrollment(id, persistedData, Date.now());
+
+  const count = await databaseService.getPendingEnrollmentsCount();
+  useAuthStore.getState().setPendingUploadsCount(count);
+  notificationService.notifyOfflineUploadSaved();
+
+  logger.debug(`[Enrollment] Saved offline. Total pending: ${count}`);
+  return true;
 };
+
+// ─── Count helper ─────────────────────────────────────────────────────────────
 
 export const checkPendingEnrollments = async (): Promise<void> => {
-    try {
-        const existingStr = await AsyncStorage.getItem('pendingEnrollments');
-        const pending = existingStr ? JSON.parse(existingStr) : [];
-        useAuthStore.getState().setPendingUploadsCount(pending.length);
-    } catch (error) {
-        console.error('[Enrollment] Failed to check pending enrollments:', error);
-    }
+  try {
+    const count = await databaseService.getPendingEnrollmentsCount();
+    useAuthStore.getState().setPendingUploadsCount(count);
+  } catch (err) {
+    logger.error('[Enrollment] Failed to check pending count:', err);
+  }
 };
+
+// ─── Sync ─────────────────────────────────────────────────────────────────────
 
 export const syncPendingEnrollments = async (): Promise<void> => {
-    if (syncPendingInProgress) {
-        return;
+  if (syncPendingInProgress) return;
+  syncPendingInProgress = true;
+
+  try {
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) return;
+
+    // One-time migration from legacy AsyncStorage format
+    await migrateLegacyPendingEnrollments();
+
+    const pending = await databaseService.getPendingEnrollments();
+    if (pending.length === 0) {
+      useAuthStore.getState().setPendingUploadsCount(0);
+      return;
     }
 
-    syncPendingInProgress = true;
+    logger.debug(`[Enrollment] Syncing ${pending.length} pending enrollments`);
+    useAuthStore.getState().setUploadStatus('syncing');
+    notificationService.notifySyncStatus(
+      'syncing',
+      `Uploading ${pending.length} pending enrollment${pending.length === 1 ? '' : 's'}...`
+    );
 
-    try {
-        const netState = await NetInfo.fetch();
-        if (netState.isConnected === false) {
-            syncPendingInProgress = false;
-            return;
+    let failCount = 0;
+
+    for (const row of pending) {
+      // Already hit max retries in a previous run — skip, user was already notified
+      if (row.retry_count >= MAX_RETRIES) continue;
+
+      let enrollmentData: EnrollmentData;
+      try {
+        enrollmentData = JSON.parse(row.payload) as EnrollmentData;
+      } catch {
+        // Corrupt payload — discard permanently
+        await databaseService.removePendingEnrollment(row.id);
+        continue;
+      }
+
+      try {
+        await uploadEnrollmentToApi(enrollmentData);
+        // Atomic removal immediately after success — prevents duplicate on crash
+        await databaseService.removePendingEnrollment(row.id);
+        logger.debug(`[Enrollment] Synced ${row.id}`);
+      } catch (err: any) {
+        const httpStatus: number | undefined = err?.response?.status;
+
+        if (httpStatus === 409) {
+          // Server already has this record — discard without retrying
+          await databaseService.removePendingEnrollment(row.id);
+          logger.warn(`[Enrollment] 409 Conflict for ${row.id} — discarding duplicate`);
+          continue;
         }
 
-        const existingStr = await AsyncStorage.getItem('pendingEnrollments');
-        if (!existingStr) {
-            syncPendingInProgress = false;
-            return;
+        if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) {
+          // Permanent client error (400, 403, 422…) — won't succeed on retry
+          await databaseService.incrementPendingRetry(row.id, err.message, true);
+          failCount++;
+          continue;
         }
 
-        let pending: OfflineEnrollment[] = JSON.parse(existingStr);
-        if (pending.length === 0) {
-            useAuthStore.getState().setPendingUploadsCount(0);
-            syncPendingInProgress = false;
-            return;
+        // Transient failure (network, 5xx, 429, missing file) — increment retry
+        const newRetryCount = row.retry_count + 1;
+        const permanent = newRetryCount >= MAX_RETRIES;
+        await databaseService.incrementPendingRetry(row.id, err.message, permanent);
+
+        if (permanent) {
+          notificationService.notifyMessage(
+            'Enrollment Upload Failed',
+            `Could not sync enrollment for employee ${enrollmentData.employeeId}. Please contact support.`,
+            'high'
+          );
         }
-
-        console.log(`[Enrollment] Syncing ${pending.length} pending enrollments...`);
-        useAuthStore.getState().setUploadStatus('syncing');
-        notificationService.notifySyncStatus('syncing', `Uploading ${pending.length} pending enrollments...`);
-
-        const remaining: OfflineEnrollment[] = [];
-
-        for (const entry of pending) {
-            try {
-                console.log(`[Enrollment] Syncing entry ${entry.id} for employee ${entry.data.employeeId}`);
-                await uploadEnrollmentToApi(entry.data);
-                console.log(`[Enrollment] Successfully synced ${entry.id}`);
-            } catch (error) {
-                console.error(`[Enrollment] Failed to sync ${entry.id}:`, error);
-                remaining.push(entry);
-            }
-        }
-
-        await AsyncStorage.setItem('pendingEnrollments', JSON.stringify(remaining));
-
-        useAuthStore.getState().setPendingUploadsCount(remaining.length);
-
-        if (remaining.length === 0) {
-            useAuthStore.getState().setUploadStatus('success');
-            notificationService.notifySyncStatus('completed', 'All pending uploads synced successfully.');
-            setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
-        } else {
-            useAuthStore.getState().setUploadStatus('error');
-            notificationService.notifySyncStatus('failed', `${remaining.length} uploads failed. Will retry periodically.`);
-
-            if (syncRetryTimeout) {
-                clearTimeout(syncRetryTimeout);
-            }
-
-            syncRetryTimeout = setTimeout(() => {
-                syncRetryTimeout = null;
-                syncPendingEnrollments();
-            }, 10000);
-        }
-
-        console.log(`[Enrollment] Sync complete. Remaining pending: ${remaining.length}`);
-    } catch (error: any) {
-        console.error('[Enrollment] Sync error:', error);
-        useAuthStore.getState().setUploadStatus('error');
-        notificationService.notifySyncStatus('failed', error.message || 'Sync encountered an error.');
-    } finally {
-        syncPendingInProgress = false;
+        failCount++;
+      }
     }
+
+    const remaining = await databaseService.getPendingEnrollmentsCount();
+    useAuthStore.getState().setPendingUploadsCount(remaining);
+
+    if (failCount === 0) {
+      useAuthStore.getState().setUploadStatus('success');
+      notificationService.notifySyncStatus('completed', 'All pending uploads synced successfully.');
+      setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
+    } else {
+      useAuthStore.getState().setUploadStatus('error');
+      notificationService.notifySyncStatus(
+        'failed',
+        `${failCount} upload${failCount === 1 ? '' : 's'} failed. Will retry on next connection.`
+      );
+
+      if (syncRetryTimeout) clearTimeout(syncRetryTimeout);
+      syncRetryTimeout = setTimeout(() => {
+        syncRetryTimeout = null;
+        syncPendingEnrollments();
+      }, RETRY_INTERVAL_MS);
+    }
+  } catch (err: any) {
+    logger.error('[Enrollment] Sync error:', err);
+    useAuthStore.getState().setUploadStatus('error');
+  } finally {
+    syncPendingInProgress = false;
+  }
 };
+
+// ─── API upload ───────────────────────────────────────────────────────────────
 
 const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => {
-    console.log('[Enrollment] Uploading enrollment data for:', data.employeeId);
+  logger.debug('[Enrollment] Uploading for employee:', data.employeeId);
 
-    const formData = new FormData();
-    
-    formData.append('employee_id', data.employeeId);
-    formData.append('device_platform', Platform.OS);
-    formData.append('timestamp', new Date().toISOString());
-    
-    try {
-        const keptRemote = (data.images || []).filter((u) => {
-            if (!u) return false;
-            const s = String(u).trim();
-            if (!s) return false;
-            if (s.startsWith('file://') || s.startsWith('content://')) return false;
-            if (s.startsWith('data:image/')) return false;
-            // Any non-local URI/path should be treated as an existing remote image to keep on resume
-            return true;
-        });
-        if (keptRemote.length > 0) {
-            formData.append('existing_images', JSON.stringify(keptRemote));
-        }
-    } catch {}
-    
-    if (data.employeeInfo) {
-        formData.append('employee_info', JSON.stringify(data.employeeInfo));
+  const formData = new FormData();
+  formData.append('employee_id', data.employeeId);
+  formData.append('device_platform', Platform.OS);
+  formData.append('timestamp', new Date().toISOString());
+
+  // Remote image URLs that don't need re-uploading
+  try {
+    const keptRemote = (data.images || []).filter((u) => {
+      if (!u) return false;
+      const s = String(u).trim();
+      return (
+        s.length > 0 &&
+        !s.startsWith('file://') &&
+        !s.startsWith('content://') &&
+        !s.startsWith('/') &&
+        !s.startsWith('data:image/')
+      );
+    });
+    if (keptRemote.length > 0) {
+      formData.append('existing_images', JSON.stringify(keptRemote));
     }
+  } catch (e) {
+    logger.warn('[Enrollment] existing_images extraction failed:', e);
+  }
 
-    if (data.status) {
-        formData.append('status', data.status);
+  if (data.employeeInfo) {
+    formData.append('employee_info', JSON.stringify(data.employeeInfo));
+  }
+  if (data.status) {
+    formData.append('status', data.status);
+  }
+
+  // Face images
+  for (let i = 0; i < (data.images || []).length; i++) {
+    let uri = data.images[i];
+    if (!String(uri).startsWith('file://') && !String(uri).startsWith('/') && !String(uri).startsWith('content://')) {
+      continue; // remote URL — already sent via existing_images
     }
-
-    // Append Images
-    if (data.images && Array.isArray(data.images)) {
-        for (let index = 0; index < data.images.length; index++) {
-            let uri = data.images[index];
-            const filename = uri.split('/').pop() || `image_${index}.jpg`;
-
-            // Only upload local files; remote URLs/paths are handled via existing_images
-            if (!(String(uri).startsWith('file://') || String(uri).startsWith('/') || String(uri).startsWith('content://'))) {
-                console.log(`[Enrollment] Skipping non-local image upload (kept as existing): ${uri}`);
-                continue;
-            }
-            
-            // Ensure URI format for Android
-            if (Platform.OS === 'android' && !uri.startsWith('file://')) {
-                uri = `file://${uri}`;
-            }
-
-            const fileExists = await RNFS.exists(uri);
-            console.log(`[Enrollment] Image ${index}: ${uri} (Exists: ${fileExists})`);
-            
-            if (fileExists) {
-                formData.append('images', {
-                    uri: uri,
-                    type: 'image/jpeg',
-                    name: filename,
-                } as any);
-            } else {
-                console.warn(`[Enrollment] Skipping missing file: ${uri}`);
-            }
-        }
+    if (Platform.OS === 'android' && !uri.startsWith('file://')) {
+      uri = `file://${uri}`;
     }
-
-    // Append Fingerprints
-    const fingerprintMetadata: { type: string }[] = [];
-    if (data.fingerprints && Array.isArray(data.fingerprints)) {
-            for (let index = 0; index < data.fingerprints.length; index++) {
-            const fingerprint = data.fingerprints[index];
-            // Handle both object (new) and string (old/fallback) formats
-            let uri = typeof fingerprint === 'string' ? fingerprint : fingerprint.uri;
-            const type = typeof fingerprint === 'string' ? 'Unknown' : fingerprint.type;
-            
-            const filename = uri.split('/').pop() || `fingerprint_${index}.jpg`;
-            
-            // Ensure URI format for Android
-            if (Platform.OS === 'android' && !uri.startsWith('file://')) {
-                uri = `file://${uri}`;
-            }
-
-            const fileExists = await RNFS.exists(uri);
-            console.log(`[Enrollment] Fingerprint ${index}: ${uri} (${type}) (Exists: ${fileExists})`);
-
-            if (fileExists) {
-                formData.append('fingerprints', {
-                    uri: uri,
-                    type: 'image/jpeg',
-                    name: filename,
-                } as any);
-                
-                fingerprintMetadata.push({ type });
-            } else {
-                    console.warn(`[Enrollment] Skipping missing file: ${uri}`);
-            }
-        }
+    const srcPath = uri.replace(/^file:\/\//, '');
+    if (!(await RNFS.exists(srcPath))) {
+      throw new Error(`Face image file not found: ${uri} — upload aborted to prevent incomplete record`);
     }
-    
-    // Append Fingerprint Metadata
-    if (fingerprintMetadata.length > 0) {
-        formData.append('fingerprint_info', JSON.stringify(fingerprintMetadata));
+    formData.append('images', {
+      uri,
+      type: 'image/jpeg',
+      name: uri.split('/').pop() || `face_${i}.jpg`,
+    } as any);
+  }
+
+  // Fingerprints
+  const fingerprintMeta: { type: string }[] = [];
+  for (let i = 0; i < (data.fingerprints || []).length; i++) {
+    const fp = data.fingerprints[i];
+    let uri = typeof fp === 'string' ? fp : fp.uri;
+    const type = typeof fp === 'string' ? 'Unknown' : fp.type;
+
+    if (Platform.OS === 'android' && !uri.startsWith('file://')) {
+      uri = `file://${uri}`;
     }
-
-    // Append Documents
-    const documentTypes: string[] = [];
-    if (data.documents && Array.isArray(data.documents)) {
-            for (let index = 0; index < data.documents.length; index++) {
-            let doc = data.documents[index];
-            let uri = doc.uri;
-            const filename = uri.split('/').pop() || `doc_${index}.jpg`;
-            
-            // Ensure URI format for Android
-            if (Platform.OS === 'android' && !uri.startsWith('file://')) {
-                uri = `file://${uri}`;
-            }
-
-            const fileExists = await RNFS.exists(uri);
-            console.log(`[Enrollment] Document ${index}: ${uri} (Exists: ${fileExists})`);
-
-            if (fileExists) {
-                formData.append('documents', {
-                    uri: uri,
-                    type: 'image/jpeg', 
-                    name: filename,
-                } as any);
-                documentTypes.push(doc.type);
-            } else {
-                    console.warn(`[Enrollment] Skipping missing file: ${uri}`);
-            }
-        }
-        if (documentTypes.length > 0) {
-            formData.append('document_types', JSON.stringify(documentTypes));
-        }
+    const srcPath = uri.replace(/^file:\/\//, '');
+    if (!(await RNFS.exists(srcPath))) {
+      throw new Error(`Fingerprint file not found: ${uri} — upload aborted to prevent incomplete record`);
     }
+    formData.append('fingerprints', {
+      uri,
+      type: 'image/jpeg',
+      name: uri.split('/').pop() || `fp_${i}.jpg`,
+    } as any);
+    fingerprintMeta.push({ type });
+  }
+  if (fingerprintMeta.length > 0) {
+    formData.append('fingerprint_info', JSON.stringify(fingerprintMeta));
+  }
 
-    console.log(`[Enrollment] POST to /mobile/v1/enrollments with FormData using fetch`);
-    
-    // Use fetch instead of axios for reliable FormData handling in React Native
-    const baseURL = api.defaults.baseURL;
-    const token = await AsyncStorage.getItem('userToken');
-
-    const url = `${baseURL}/mobile/v1/enrollments`;
-    console.log(`[Enrollment] Target URL: ${url}`);
-    console.log(`[Enrollment] Auth Token present: ${!!token}`);
-    
-    // Log FormData parts (approximation as we can't iterate FormData easily in RN sometimes)
-    console.log('[Enrollment] FormData created with keys:', ['employee_id', 'device_platform', 'timestamp', 'employee_info', 'images', 'fingerprints']);
-
-    // Use AbortController for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for large uploads
-
-    let response;
-    try {
-        response = await fetch(url, {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal,
-            headers: {
-                'Authorization': token ? `Bearer ${token}` : '',
-                'Accept': 'application/json',
-                // Content-Type is intentionally omitted to let fetch set it with boundary
-            }
-        });
-        clearTimeout(timeoutId);
-    } catch (error: any) {
-        if (error.name === 'AbortError' || error.message === 'Aborted') {
-            throw new Error('Upload Request Timed Out');
-        }
-        throw error;
+  // Documents
+  const documentTypes: string[] = [];
+  for (let i = 0; i < (data.documents || []).length; i++) {
+    const doc = data.documents![i];
+    let uri = doc.uri;
+    if (Platform.OS === 'android' && !uri.startsWith('file://')) {
+      uri = `file://${uri}`;
     }
-
-    console.log(`[Enrollment] Response status: ${response.status}`);
-    const responseText = await response.text();
-    console.log(`[Enrollment] Response text: ${responseText.substring(0, 500)}...`);
-
-    let responseData;
-    try {
-        responseData = JSON.parse(responseText);
-    } catch (e) {
-        console.error('[Enrollment] Failed to parse response JSON:', e);
-        throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}`);
+    const srcPath = uri.replace(/^file:\/\//, '');
+    if (!(await RNFS.exists(srcPath))) {
+      throw new Error(`Document file not found: ${uri} — upload aborted to prevent incomplete record`);
     }
+    formData.append('documents', {
+      uri,
+      type: 'image/jpeg',
+      name: uri.split('/').pop() || `doc_${i}.jpg`,
+    } as any);
+    documentTypes.push(doc.type);
+  }
+  if (documentTypes.length > 0) {
+    formData.append('document_types', JSON.stringify(documentTypes));
+  }
 
-    if (response.ok && (responseData.status || responseData.success)) {
-            console.log('[Enrollment] Submission successful:', responseData.message);
-            return true;
-    } else {
-            console.error('[Enrollment] Server returned error:', responseData);
-            throw new Error(responseData?.message || 'Enrollment submission failed');
-    }
+  // Use fetch (not axios) for reliable FormData/multipart handling in React Native
+  const baseURL = api.defaults.baseURL;
+  const token = tokenCache.get() || (await AsyncStorage.getItem('userToken'));
+  const url = `${baseURL}/mobile/v1/enrollments`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+        Accept: 'application/json',
+        // Content-Type omitted — fetch sets multipart/form-data + boundary automatically
+      },
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') throw new Error('Upload timed out after 30 s');
+    throw err;
+  }
+  clearTimeout(timeoutId);
+
+  const responseText = await response.text();
+  let responseData: any;
+  try {
+    responseData = JSON.parse(responseText);
+  } catch {
+    throw new Error(`Non-JSON response (${response.status}): ${responseText.slice(0, 120)}`);
+  }
+
+  if (response.ok && (responseData.status || responseData.success)) {
+    logger.debug('[Enrollment] Upload successful:', responseData.message);
+    return true;
+  }
+
+  // Preserve the HTTP status on the error object so callers can inspect it
+  const err = new Error(responseData?.message || `Server error ${response.status}`);
+  (err as any).response = { status: response.status, data: responseData };
+  throw err;
 };
+
+// ─── Public submit entry-point ─────────────────────────────────────────────────
 
 export const submitEnrollment = async (data: EnrollmentData): Promise<boolean> => {
-    try {
-        console.log('[Enrollment] Submitting enrollment data for:', data.employeeId);
+  logger.debug('[Enrollment] Submitting for:', data.employeeId);
 
-        // Check Network Status
-        const netState = await NetInfo.fetch();
-        // Consider offline if disconnected OR (connected but not reachable)
-        const isOffline = netState.isConnected === false || (netState.isConnected === true && netState.isInternetReachable === false);
+  const netState = await NetInfo.fetch();
+  const isOffline =
+    netState.isConnected === false ||
+    (netState.isConnected === true && netState.isInternetReachable === false);
 
-        if (isOffline) {
-            console.log('[Enrollment] Offline mode detected. Saving to local storage.');
-            return await saveEnrollmentOffline(data);
-        } else {
-            console.log('[Enrollment] Online mode detected. Attempting upload.');
-            try {
-                return await uploadEnrollmentToApi(data);
-            } catch (uploadError) {
-                console.warn('[Enrollment] Upload failed (likely timeout/server error). Falling back to offline save.', uploadError);
-                return await saveEnrollmentOffline(data);
-            }
-        }
+  if (isOffline) {
+    logger.debug('[Enrollment] Offline — saving locally');
+    return saveEnrollmentOffline(data);
+  }
 
-    } catch (error: any) {
-        console.error('[Enrollment] Submission error:', error.message);
-        throw error;
-    }
+  try {
+    return await uploadEnrollmentToApi(data);
+  } catch (uploadErr) {
+    logger.warn('[Enrollment] Online upload failed — falling back to offline save:', uploadErr);
+    return saveEnrollmentOffline(data);
+  }
 };
 
+// ─── Resume flow ──────────────────────────────────────────────────────────────
+
 export const fetchEnrollmentByEmployeeId = async (employeeId: string): Promise<any> => {
-    const token = await AsyncStorage.getItem('userToken');
-    try {
-        const res = await api.get('/mobile/v1/enrollments/resume', {
-            params: { employee_id: employeeId },
-            headers: { Authorization: token ? `Bearer ${token}` : '' }
-        });
-        console.log('resume endpoint got the response');
-        const data = res.data?.data || res.data;
-        if (!data || (Array.isArray(data.data) && data.data.length === 0) || !data.employee) {
-            throw new Error('No existing flow to resume');
-        }
-        return data;
-    } catch (err: any) {
-        if (err.response?.status === 404 || err.message === 'No existing flow to resume') {
-            throw new Error('No existing flow to resume');
-        }
-        try {
-            const res2 = await api.get('/mobile/v1/enrollments', {
-                params: { employee_id: employeeId },
-                headers: { Authorization: token ? `Bearer ${token}` : '' }
-            });
-            const data2 = res2.data?.data || res2.data;
-            if (!data2 || (Array.isArray(data2.data) && data2.data.length === 0) || !data2.employee) {
-                throw new Error('No existing flow to resume');
-            }
-            return data2;
-        } catch (e) {
-            throw err;
-        }
+  const token = tokenCache.get() || (await AsyncStorage.getItem('userToken'));
+  try {
+    const res = await api.get('/mobile/v1/enrollments/resume', {
+      params: { employee_id: employeeId },
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+    });
+    const data = res.data?.data || res.data;
+    if (!data || (Array.isArray(data.data) && data.data.length === 0) || !data.employee) {
+      throw new Error('No existing flow to resume');
     }
+    return data;
+  } catch (err: any) {
+    if (err.response?.status === 404 || err.message === 'No existing flow to resume') {
+      throw new Error('No existing flow to resume');
+    }
+    try {
+      const res2 = await api.get('/mobile/v1/enrollments', {
+        params: { employee_id: employeeId },
+        headers: { Authorization: token ? `Bearer ${token}` : '' },
+      });
+      const data2 = res2.data?.data || res2.data;
+      if (!data2 || (Array.isArray(data2.data) && data2.data.length === 0) || !data2.employee) {
+        throw new Error('No existing flow to resume');
+      }
+      return data2;
+    } catch {
+      throw err;
+    }
+  }
 };
 
 export const resumeVerification = async (employeeId: string): Promise<void> => {
-    const data = await fetchEnrollmentByEmployeeId(employeeId);
-    console.log('[Enrollment] Resume data:', data);
-    const rawEmp = data.employee || data.employeeInfo || data.data?.employee || null;
-    let employee = rawEmp;
-    if (rawEmp) {
-        const fullname = rawEmp.fullname || rawEmp.full_name || rawEmp.name || '';
-        const nameParts = fullname ? String(fullname).split(' ') : [];
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.slice(1).join(' ') || '';
-        const accountNumber = rawEmp.accountNumber || rawEmp.account_number || '';
-        const department = rawEmp.department || '';
-        const serviceId = String(rawEmp.serviceId || rawEmp.service_id || '');
-        const idCandidate = rawEmp.employee_number || rawEmp.employment_number || rawEmp.employee_no || rawEmp.id || employeeId;
-        const dob = rawEmp.dob || rawEmp.date_of_birth || rawEmp.birth_date || null;
-        const fda = rawEmp.first_appointment_date || rawEmp.firstDateOfAppointment || null;
-        const nin = rawEmp.nin || null;
-        const bvn = rawEmp.bvn || null;
-        employee = {
-            id: String(idCandidate),
-            identifier: String(idCandidate),
-            firstName,
-            lastName,
-            fullname: fullname || `${firstName} ${lastName}`.trim(),
-            accountNumber,
-            department,
-            serviceId,
-            fax: rawEmp.fax ?? null,
-            dob: dob ? String(dob) : undefined,
-            firstAppointmentDate: fda ? String(fda) : undefined,
-            nin: nin ? String(nin) : undefined,
-            bvn: bvn ? String(bvn) : undefined,
-        };
-    }
-    const images: string[] = data.images || data.faceImages || [];
-    const fingerprintsRaw = data.fingerprints || [];
-    const documentsRaw = data.documents || [];
-    const fingerprints: FingerprintData[] = fingerprintsRaw.map((f: any) => ({
-        uri: f.uri || f.path || '',
-        type: f.type || 'Left Thumb'
-    })).filter((f: FingerprintData) => !!f.uri);
-    const documents: Document[] = documentsRaw.map((d: any) => {
-        const createdAt = d.uploadedAt ? new Date(d.uploadedAt).getTime() : Date.now();
-        let status: Document['status'] = 'SYNCED';
-        if (d.status === 2 || d.verificationStatus === 'verified') status = 'VERIFIED';
-        return {
-            id: String(d.id || Math.random().toString(36).slice(2)),
-            type: d.type || 'UNKNOWN',
-            uri: d.uri || d.path || '',
-            status,
-            uploadedBy: 'server',
-            createdAt
-        };
-    }).filter((d: Document) => !!d.uri);
-    if (employee) useEnrollmentStore.getState().setEmployee(employee);
-    if ((employee as any)?.dob) useEnrollmentStore.getState().setDob((employee as any).dob);
-    if ((employee as any)?.firstAppointmentDate) useEnrollmentStore.getState().setFirstAppointmentDate((employee as any).firstAppointmentDate);
-    if ((employee as any)?.nin) useEnrollmentStore.getState().setNin((employee as any).nin);
-    if ((employee as any)?.bvn) useEnrollmentStore.getState().setBvn((employee as any).bvn);
-    useEnrollmentStore.getState().setImages(images);
-    useEnrollmentStore.getState().setFingerprints(fingerprints);
-    useEnrollmentStore.getState().setDocuments(documents);
-    useEnrollmentStore.getState().setSkippedFingerprint(!fingerprints || fingerprints.length === 0);
+  const data = await fetchEnrollmentByEmployeeId(employeeId);
+
+  const rawEmp = data.employee || data.employeeInfo || data.data?.employee || null;
+  let employee: any = rawEmp;
+
+  if (rawEmp) {
+    const fullname = rawEmp.fullname || rawEmp.full_name || rawEmp.name || '';
+    const nameParts = fullname ? String(fullname).split(' ') : [];
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    const idCandidate =
+      rawEmp.employee_number || rawEmp.employment_number || rawEmp.employee_no || rawEmp.id || employeeId;
+    employee = {
+      id: String(idCandidate),
+      identifier: String(idCandidate),
+      firstName,
+      lastName,
+      fullname: fullname || `${firstName} ${lastName}`.trim(),
+      accountNumber: rawEmp.accountNumber || rawEmp.account_number || '',
+      department: rawEmp.department || '',
+      serviceId: String(rawEmp.serviceId || rawEmp.service_id || ''),
+      fax: rawEmp.fax ?? null,
+      dob: rawEmp.dob || rawEmp.date_of_birth || rawEmp.birth_date || undefined,
+      firstAppointmentDate:
+        rawEmp.first_appointment_date || rawEmp.firstDateOfAppointment || undefined,
+      nin: rawEmp.nin ? String(rawEmp.nin) : undefined,
+      bvn: rawEmp.bvn ? String(rawEmp.bvn) : undefined,
+    };
+  }
+
+  const images: string[] = data.images || data.faceImages || [];
+  const fingerprints: FingerprintData[] = (data.fingerprints || [])
+    .map((f: any) => ({ uri: f.uri || f.path || '', type: f.type || 'Left Thumb' }))
+    .filter((f: FingerprintData) => !!f.uri);
+  const documents: Document[] = (data.documents || [])
+    .map((d: any) => ({
+      id: String(d.id || Math.random().toString(36).slice(2)),
+      type: d.type || 'UNKNOWN',
+      uri: d.uri || d.path || '',
+      status: d.status === 2 || d.verificationStatus === 'verified' ? 'VERIFIED' : 'SYNCED',
+      uploadedBy: 'server',
+      createdAt: d.uploadedAt ? new Date(d.uploadedAt).getTime() : Date.now(),
+    }))
+    .filter((d: Document) => !!d.uri);
+
+  const store = useEnrollmentStore.getState();
+  if (employee) store.setEmployee(employee);
+  if (employee?.dob) store.setDob(employee.dob);
+  if (employee?.firstAppointmentDate) store.setFirstAppointmentDate(employee.firstAppointmentDate);
+  if (employee?.nin) store.setNin(employee.nin);
+  if (employee?.bvn) store.setBvn(employee.bvn);
+  store.setImages(images);
+  store.setFingerprints(fingerprints);
+  store.setDocuments(documents);
+  store.setSkippedFingerprint(fingerprints.length === 0);
 };
