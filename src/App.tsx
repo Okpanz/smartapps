@@ -16,7 +16,7 @@ import BackupRestoreScreen from './screens/BackupRestore';
 import { NetworkIndicator } from './components/NetworkIndicator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useNetInfo } from '@react-native-community/netinfo';
-import { syncPendingEnrollments } from './services/enrollment';
+import { syncPendingEnrollments, resumeSyncSchedule } from './services/enrollment';
 import { notificationService, subscribeNotifications } from './services/notification';
 import { subscribeFeatureFlags } from './services/featureFlags';
 import { useFeatureFlags } from './hooks/useFeatureFlags';
@@ -41,6 +41,14 @@ export default function App() {
   React.useEffect(() => {
     fetchForCurrentService().catch(() => {});
   }, [user?.service_id]);
+
+  // Re-arm the persisted retry/backoff schedule once authenticated, so pending
+  // uploads resume on the correct cadence after an app restart.
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      resumeSyncSchedule();
+    }
+  }, [isAuthenticated]);
 
   React.useEffect(() => {
     const unsubscribe = subscribeFeatureFlags();
@@ -67,9 +75,10 @@ export default function App() {
     if (isOnline) {
       if (wasOffline.current) {
         notificationService.notifyInternetRestored();
-        // Only sync when a valid authenticated session exists
+        // Only sync when a valid authenticated session exists. A fresh
+        // connection is a strong signal, so force past any active backoff.
         if (isAuthenticated) {
-          syncPendingEnrollments();
+          syncPendingEnrollments({ force: true });
         }
       }
       wasOffline.current = false;

@@ -273,7 +273,7 @@ export default function SettingsScreen() {
 
   const handleSyncPending = async () => {
     try {
-      await syncPendingEnrollments();
+      await syncPendingEnrollments({ force: true });
       if (uploadStatus === 'error') {
         showAlert('Upload Failed', 'Some records could not be synced. Please try again.', 'error');
       }

@@ -24,14 +24,85 @@ interface EnrollmentData {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_RETRIES = 5;
-const RETRY_INTERVAL_MS = 10_000;
 const ENROLLMENT_DIR = `${RNFS.DocumentDirectoryPath}/enrollments`;
+
+/**
+ * Staged auto-retry backoff. Each entry is the wait BEFORE the next attempt,
+ * applied only after the previous attempt failed:
+ *   attempt 1 (immediate) → 1m → attempt 2 → 1m → attempt 3
+ *     → 30m → attempt 4 → 1h → attempt 5 → 2h → attempt 6 → 4h → attempt 7
+ * After the schedule is exhausted, auto-sync pauses until a manual/forced
+ * retrigger (which resets the schedule and starts over).
+ */
+const SYNC_BACKOFF_MS = [
+  60_000,        // after attempt 1 → +1 min
+  60_000,        // after attempt 2 → +1 min  (the 3 quick tries)
+  30 * 60_000,   // after attempt 3 → +30 min
+  60 * 60_000,   // after attempt 4 → +1 hour
+  120 * 60_000,  // after attempt 5 → +2 hours
+  240 * 60_000,  // after attempt 6 → +4 hours
+];
+const BACKOFF_KEY = 'sync_backoff_state';
+
+interface SyncBackoffState {
+  attempts: number;           // failed auto attempts so far (schedule index)
+  nextAttemptAt: number | null;
+  exhausted: boolean;
+}
+
+const EMPTY_BACKOFF: SyncBackoffState = { attempts: 0, nextAttemptAt: null, exhausted: false };
 
 // ─── Module-level sync guard ──────────────────────────────────────────────────
 
 let syncPendingInProgress = false;
 let syncRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// ─── Backoff state (persisted so it survives app restarts) ────────────────────
+
+const loadBackoff = async (): Promise<SyncBackoffState> =>
+  (await databaseService.getAppData<SyncBackoffState>(BACKOFF_KEY)) || { ...EMPTY_BACKOFF };
+
+const saveBackoff = (state: SyncBackoffState): Promise<void> =>
+  databaseService.saveAppData(BACKOFF_KEY, state);
+
+const resetBackoff = (): Promise<void> => databaseService.saveAppData(BACKOFF_KEY, { ...EMPTY_BACKOFF });
+
+const humanizeDelay = (ms: number): string => {
+  const mins = Math.round(ms / 60_000);
+  if (mins < 60) return `${mins} min`;
+  const hrs = mins / 60;
+  return `${hrs} hour${hrs === 1 ? '' : 's'}`;
+};
+
+/** Schedules a foreground timer to retry after `delayMs`. */
+const scheduleNextAttempt = (delayMs: number): void => {
+  if (syncRetryTimeout) clearTimeout(syncRetryTimeout);
+  syncRetryTimeout = setTimeout(() => {
+    syncRetryTimeout = null;
+    syncPendingEnrollments();
+  }, Math.max(0, delayMs));
+};
+
+/**
+ * Re-arms the retry schedule on app launch using the persisted state, so the
+ * 30m/1h/2h/4h waits survive the app being backgrounded or killed.
+ */
+export const resumeSyncSchedule = async (): Promise<void> => {
+  try {
+    const state = await loadBackoff();
+    if (state.exhausted) {
+      logger.debug('[Enrollment] Auto-sync is paused (backoff exhausted) — awaiting manual retrigger');
+      return;
+    }
+    if (state.nextAttemptAt && Date.now() < state.nextAttemptAt) {
+      scheduleNextAttempt(state.nextAttemptAt - Date.now());
+    } else {
+      void syncPendingEnrollments();
+    }
+  } catch (err) {
+    logger.warn('[Enrollment] resumeSyncSchedule failed (non-fatal):', err);
+  }
+};
 
 // ─── File helpers ─────────────────────────────────────────────────────────────
 
@@ -181,11 +252,41 @@ export const checkPendingEnrollments = async (): Promise<void> => {
 
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
-export const syncPendingEnrollments = async (): Promise<void> => {
+/**
+ * Uploads all pending enrollments.
+ *
+ * Auto-runs respect the staged backoff schedule (SYNC_BACKOFF_MS): they no-op
+ * while a wait is pending or after the schedule is exhausted. A forced run
+ * (manual "Upload Pending Records", a restore, or a network reconnect) resets
+ * the schedule and uploads immediately.
+ */
+export const syncPendingEnrollments = async (
+  opts: { force?: boolean } = {}
+): Promise<void> => {
   if (syncPendingInProgress) return;
   syncPendingInProgress = true;
 
   try {
+    // ── Backoff gate ──────────────────────────────────────────────────────
+    if (opts.force) {
+      await resetBackoff();
+      if (syncRetryTimeout) {
+        clearTimeout(syncRetryTimeout);
+        syncRetryTimeout = null;
+      }
+    } else {
+      const state = await loadBackoff();
+      if (state.exhausted) {
+        logger.debug('[Enrollment] Sync skipped — backoff exhausted (manual retrigger required)');
+        return;
+      }
+      if (state.nextAttemptAt && Date.now() < state.nextAttemptAt) {
+        // Not yet time — make sure a timer is armed for the remaining wait
+        scheduleNextAttempt(state.nextAttemptAt - Date.now());
+        return;
+      }
+    }
+
     const netState = await NetInfo.fetch();
     if (!netState.isConnected) return;
 
@@ -195,6 +296,7 @@ export const syncPendingEnrollments = async (): Promise<void> => {
     const pending = await databaseService.getPendingEnrollments();
     if (pending.length === 0) {
       useAuthStore.getState().setPendingUploadsCount(0);
+      await resetBackoff();
       return;
     }
 
@@ -205,12 +307,11 @@ export const syncPendingEnrollments = async (): Promise<void> => {
       `Uploading ${pending.length} pending enrollment${pending.length === 1 ? '' : 's'}...`
     );
 
-    let failCount = 0;
+    // Only transient failures drive the backoff schedule; permanent client
+    // errors (4xx) are set aside and won't succeed on retry.
+    let transientFailures = 0;
 
     for (const row of pending) {
-      // Already hit max retries in a previous run — skip, user was already notified
-      if (row.retry_count >= MAX_RETRIES) continue;
-
       let enrollmentData: EnrollmentData;
       try {
         enrollmentData = JSON.parse(row.payload) as EnrollmentData;
@@ -238,47 +339,57 @@ export const syncPendingEnrollments = async (): Promise<void> => {
         }
 
         if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) {
-          // Permanent client error (400, 403, 422…) — won't succeed on retry
+          // Permanent client error (400, 403, 422…) — set aside, notify once.
+          // Does NOT drive the backoff schedule (retrying won't help).
           await databaseService.incrementPendingRetry(row.id, err.message, true);
-          failCount++;
+          notificationService.notifyMessage(
+            'Enrollment Upload Rejected',
+            `The server rejected the enrollment for employee ${enrollmentData.employeeId}. Please contact support.`,
+            'high'
+          );
           continue;
         }
 
-        // Transient failure (network, 5xx, 429, missing file) — increment retry
-        const newRetryCount = row.retry_count + 1;
-        const permanent = newRetryCount >= MAX_RETRIES;
-        await databaseService.incrementPendingRetry(row.id, err.message, permanent);
-
-        if (permanent) {
-          notificationService.notifyMessage(
-            'Enrollment Upload Failed',
-            `Could not sync enrollment for employee ${enrollmentData.employeeId}. Please contact support.`,
-            'high'
-          );
-        }
-        failCount++;
+        // Transient failure (network, 5xx, 429, missing file) — keep for retry.
+        await databaseService.incrementPendingRetry(row.id, err.message, false);
+        transientFailures++;
       }
     }
 
     const remaining = await databaseService.getPendingEnrollmentsCount();
     useAuthStore.getState().setPendingUploadsCount(remaining);
 
-    if (failCount === 0) {
+    if (transientFailures === 0) {
+      // Everything either uploaded or was set aside as a permanent error —
+      // nothing left for the schedule to retry.
+      await resetBackoff();
       useAuthStore.getState().setUploadStatus('success');
-      notificationService.notifySyncStatus('completed', 'All pending uploads synced successfully.');
+      notificationService.notifySyncStatus('completed', 'All pending uploads processed.');
       setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
-    } else {
-      useAuthStore.getState().setUploadStatus('error');
+      return;
+    }
+
+    // Advance the backoff schedule.
+    useAuthStore.getState().setUploadStatus('error');
+    const prev = await loadBackoff();
+    const attempts = prev.attempts + 1;
+    const delay = SYNC_BACKOFF_MS[attempts - 1];
+
+    if (delay === undefined) {
+      await saveBackoff({ attempts, nextAttemptAt: null, exhausted: true });
       notificationService.notifySyncStatus(
         'failed',
-        `${failCount} upload${failCount === 1 ? '' : 's'} failed. Will retry on next connection.`
+        'Automatic upload paused after several attempts. Open Settings and tap "Upload Pending Records" to retry.'
       );
-
-      if (syncRetryTimeout) clearTimeout(syncRetryTimeout);
-      syncRetryTimeout = setTimeout(() => {
-        syncRetryTimeout = null;
-        syncPendingEnrollments();
-      }, RETRY_INTERVAL_MS);
+      logger.warn('[Enrollment] Backoff exhausted — auto-sync paused until manual retrigger');
+    } else {
+      const nextAttemptAt = Date.now() + delay;
+      await saveBackoff({ attempts, nextAttemptAt, exhausted: false });
+      notificationService.notifySyncStatus(
+        'failed',
+        `${transientFailures} upload${transientFailures === 1 ? '' : 's'} failed. Next retry in ${humanizeDelay(delay)}.`
+      );
+      scheduleNextAttempt(delay);
     }
   } catch (err: any) {
     logger.error('[Enrollment] Sync error:', err);
@@ -316,8 +427,8 @@ export const restoreSingleFromBackup = async (
   useAuthStore.getState().setPendingUploadsCount(count);
   logger.debug(`[Enrollment] Restored ${verificationId} into upload queue`);
 
-  // Kick off a sync attempt (no-op if offline)
-  void syncPendingEnrollments();
+  // Forced sync — a restore is a deliberate action, so reset any backoff
+  void syncPendingEnrollments({ force: true });
   return true;
 };
 
@@ -359,7 +470,7 @@ export const restoreUnsyncedFromBackup = async (): Promise<{
     `[Enrollment] Restore complete — new:${restored} queued:${alreadyQueued} synced:${skippedSynced}`
   );
 
-  if (restored > 0) void syncPendingEnrollments();
+  if (restored > 0) void syncPendingEnrollments({ force: true });
   return { restored, alreadyQueued, skippedSynced };
 };
 
@@ -496,20 +607,34 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
   clearTimeout(timeoutId);
 
   const responseText = await response.text();
-  let responseData: any;
-  try {
-    responseData = JSON.parse(responseText);
-  } catch {
-    throw new Error(`Non-JSON response (${response.status}): ${responseText.slice(0, 120)}`);
+  let responseData: any = null;
+  if (responseText) {
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      // Non-JSON body — tolerated on a 2xx (some endpoints return empty/plain text)
+      responseData = null;
+    }
   }
 
-  if (response.ok && (responseData.status || responseData.success)) {
-    logger.debug('[Enrollment] Upload successful:', responseData.message);
+  // Treat ANY 2xx (200, 201, 204, empty/non-JSON body) as success, unless the
+  // body explicitly flags failure (status:false / success:false). This avoids
+  // re-uploading records the server already accepted with a 201.
+  const bodyDeniesSuccess =
+    responseData != null &&
+    (responseData.status === false || responseData.success === false);
+
+  if (response.ok && !bodyDeniesSuccess) {
+    logger.debug('[Enrollment] Upload successful:', responseData?.message ?? `HTTP ${response.status}`);
     return true;
   }
 
-  // Preserve the HTTP status on the error object so callers can inspect it
-  const err = new Error(responseData?.message || `Server error ${response.status}`);
+  // Non-2xx, or a 2xx the body explicitly rejected. Preserve the HTTP status
+  // on the error object so callers can classify transient vs permanent.
+  const err = new Error(
+    responseData?.message ||
+      (responseText ? responseText.slice(0, 120) : `Server error ${response.status}`)
+  );
   (err as any).response = { status: response.status, data: responseData };
   throw err;
 };
