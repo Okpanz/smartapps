@@ -65,59 +65,60 @@ export default function SaveScreen() {
     }, []);
 
     const handleSubmit = async () => {
-        const isBiometricComplete = images.length >= 2 && (fingerprints.length >= 2 || skippedFingerprint);
-        const isScanComplete = documents.length > 0;
+    const isBiometricComplete = images.length >= 2 && (fingerprints.length >= 2 || skippedFingerprint);
+    const isScanComplete = documents.length > 0;
 
-        if (!employee) return;
+    if (!employee) return;
 
-        if (flow === 'scan' && !isScanComplete) {
-            showAlert('Incomplete', 'Please upload at least one document or go back to enrollment.', 'warning');
-            return;
-        }
+    if (flow === 'scan' && !isScanComplete) {
+      showAlert('Incomplete', 'Please upload at least one document or go back to enrollment.', 'warning');
+      return;
+    }
 
-        if (flow === 'enroll' && !isBiometricComplete) {
-            showAlert('Incomplete', 'Please complete all biometric steps before saving.', 'warning');
-            return;
-        }
+    if (flow === 'enroll' && !isBiometricComplete) {
+      showAlert('Incomplete', 'Please complete all biometric steps before saving.', 'warning');
+      return;
+    }
 
-        setLoading(true);
-        try {
-            const employeeInfoToSend = employee ? {
-                ...employee,
-                dob: dob || (employee as any).dob,
-                first_appointment_date: firstAppointmentDate || (employee as any).firstAppointmentDate,
-                nin: nin || (employee as any).nin,
-                bvn: bvn || (employee as any).bvn
-            } : undefined;
-            await submitEnrollment({
-                employeeId: employee.id,
-                employeeInfo: employeeInfoToSend,
-                images,
-                fingerprints,
-                documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
-            });
+    setLoading(true);
+    try {
+      const employeeInfoToSend = employee ? {
+        ...employee,
+        dob: dob || (employee as any).dob,
+        first_appointment_date: firstAppointmentDate || (employee as any).firstAppointmentDate,
+        nin: nin || (employee as any).nin,
+        bvn: bvn || (employee as any).bvn
+      } : undefined;
+      const result = await submitEnrollment({
+        employeeId: employee.id,
+        employeeInfo: employeeInfoToSend,
+        images,
+        fingerprints,
+        documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
+        serviceId: employee.serviceId,
+      });
 
-            showAlert(
-                'Enrollment Successful',
-                'The employee data has been verified and saved.',
-                'success',
-                () => {
-                    resetEnrollment();
-                    // Reset the root navigator (parent of EnrollmentNavigator) to Tabs
-                    navigation.getParent()?.reset({
-                        index: 0,
-                        routes: [{ name: 'Tabs' }],
-                    });
-                },
-                'Return to Dashboard'
-            );
-        } catch (error: any) {
-            console.error('[SaveScreen] Submission Error:', error);
-            showAlert('Error', `Submission failed: ${error.message || 'Unknown error'}`, 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
+      showAlert(
+        'Enrollment Saved',
+        'The employee enrollment has been saved locally and will be synced with the server automatically.',
+        'success',
+        () => {
+          resetEnrollment();
+          // Reset the root navigator (parent of EnrollmentNavigator) to Tabs
+          navigation.getParent()?.reset({
+            index: 0,
+            routes: [{ name: 'Tabs' }],
+          });
+        },
+        'Return to Dashboard'
+      );
+    } catch (error: any) {
+      console.error('[SaveScreen] Submission Error:', error);
+      showAlert('Error', `Submission failed: ${error.message || 'Unknown error'}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
     if (!employee) return null;
 

@@ -11,6 +11,7 @@ import { EnhancedStepIndicator } from '../../components/ui/EnhancedStepIndicator
 import React from 'react';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { isSmallDevice } from '../../utils/responsive';
+import { copyToDocumentDir } from '../../services/enrollment';
 
 export default function FaceCaptureScreen() {
     const navigation = useNavigation<any>();
@@ -20,6 +21,7 @@ export default function FaceCaptureScreen() {
     const addImage = useEnrollmentStore((state) => state.addImage);
     const removeImage = useEnrollmentStore((state) => state.removeImage);
     const images = useEnrollmentStore((state) => state.images);
+    const employee = useEnrollmentStore((state) => state.employee);
     const cameraRef = useRef<Camera>(null);
     const [facing, setFacing] = useState<'front' | 'back'>('front');
     const device = useCameraDevice(facing);
@@ -122,10 +124,14 @@ export default function FaceCaptureScreen() {
         }
     };
 
-    const confirmPicture = () => {
-        if (preview) {
-            addImage(preview);
+    const confirmPicture = async () => {
+        if (preview && employee) {
+            const employeeNo = employee.id;
+            const compressedUri = await copyToDocumentDir(preview, `face_${employeeNo}_${Date.now()}`);
+            addImage(compressedUri);
             setPreview(null);
+        } else if (!employee) {
+            showAlert('Error', 'Employee information not available', 'error');
         }
     };
 

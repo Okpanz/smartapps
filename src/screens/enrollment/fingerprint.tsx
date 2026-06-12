@@ -16,6 +16,7 @@ import { Toast, ToastType } from '../../components/ui/Toast';
 import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { externalScanner, UsbDevice } from '../../services/externalScanner';
 import { isSmallDevice } from '../../utils/responsive';
+import { copyToDocumentDir } from '../../services/enrollment';
 
 export default function FingerprintScreen() {
     // Local definition to avoid import issues and linter errors
@@ -24,7 +25,7 @@ export default function FingerprintScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const resumeFlow = route.params?.resumeFlow === true;
-    const { addFingerprint, fingerprints, setSkippedFingerprint, skippedFingerprint, setFingerprints } = useEnrollmentStore();
+    const { addFingerprint, fingerprints, setSkippedFingerprint, skippedFingerprint, setFingerprints, employee } = useEnrollmentStore();
 
     const [scannerStatus, setScannerStatus] = useState<string>('DISCONNECTED');
     const [isInitializing, setIsInitializing] = useState(false);
@@ -278,7 +279,7 @@ export default function FingerprintScreen() {
                 setIsInitializing(true);
                 
                 // Wait a bit more to ensure scanner is fully ready
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(() => resolve(undefined), 1000));
                 
                 // Now mark as fully connected and ready
                 setScannerStatus('CONNECTED');
@@ -308,18 +309,23 @@ export default function FingerprintScreen() {
     */
     
     const confirmCapture = async () => {
-        if (reviewState.data) {
+        if (reviewState.data && employee) {
             try {
                 // Save base64 to temporary file for upload
                 const timestamp = new Date().getTime();
-                const path = `${RNFS.CachesDirectoryPath}/fingerprint_${currentCount + 1}_${timestamp}.jpg`;
+                const employeeNo = employee.id;
+                const tempPath = `${RNFS.CachesDirectoryPath}/fingerprint_${employeeNo}_${currentCount + 1}_${timestamp}.jpg`;
                 
-                await RNFS.writeFile(path, reviewState.data, 'base64');
-                console.log('[Fingerprint] Saved to temp file:', path);
+                await RNFS.writeFile(tempPath, reviewState.data, 'base64');
+                console.log('[Fingerprint] Saved to temp file:', tempPath);
+
+                // Compress the image
+                const compressedUri = await copyToDocumentDir(`file://${tempPath}`, `fingerprint_${employeeNo}_${currentCount + 1}`);
+                console.log('[Fingerprint] Compressed to:', compressedUri);
 
                 const fingerType = currentCount === 0 ? 'Left Thumb' : 'Right Thumb';
                 addFingerprint({
-                    uri: `file://${path}`,
+                    uri: compressedUri,
                     type: fingerType
                 });
                 
@@ -334,6 +340,8 @@ export default function FingerprintScreen() {
                 console.error('[Fingerprint] Failed to save file:', error);
                 showAlert('Error', 'Failed to save fingerprint. Please try again.', 'error');
             }
+        } else if (!employee) {
+            showAlert('Error', 'Employee information not available', 'error');
         }
     };
 
