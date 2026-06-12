@@ -5,6 +5,7 @@ import NetInfo from '@react-native-community/netinfo';
 import api from './api';
 import { databaseService } from './database';
 import { notificationService } from './notification';
+import { verificationBackup } from './verificationBackup';
 import { tokenCache } from '../utils/tokenCache';
 import { logger } from '../utils/logger';
 import { useAuthStore } from '../hooks/useAuthStore';
@@ -158,6 +159,11 @@ const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => 
   useAuthStore.getState().setPendingUploadsCount(count);
   notificationService.notifyOfflineUploadSaved();
 
+  // Additive archival backup (non-blocking, never throws into this flow).
+  // Use persistedData so the backup copies the permanent file URIs, not the
+  // original cache paths which may be evicted.
+  void verificationBackup.backupVerification(persistedData, 'pending');
+
   logger.debug(`[Enrollment] Saved offline. Total pending: ${count}`);
   return true;
 };
@@ -218,6 +224,8 @@ export const syncPendingEnrollments = async (): Promise<void> => {
         await uploadEnrollmentToApi(enrollmentData);
         // Atomic removal immediately after success — prevents duplicate on crash
         await databaseService.removePendingEnrollment(row.id);
+        // Keep the archival backup's sync status accurate (non-blocking)
+        void verificationBackup.markSynced(enrollmentData.employeeId);
         logger.debug(`[Enrollment] Synced ${row.id}`);
       } catch (err: any) {
         const httpStatus: number | undefined = err?.response?.status;
@@ -278,6 +286,81 @@ export const syncPendingEnrollments = async (): Promise<void> => {
   } finally {
     syncPendingInProgress = false;
   }
+};
+
+// ─── Restore from archival backup ───────────────────────────────────────────
+
+/**
+ * Re-queues a single archived verification into the pending_enrollments table
+ * so the normal sync pipeline uploads it. Idempotent: the queue id is derived
+ * from the verificationId, so restoring the same backup twice is a no-op.
+ *
+ * @returns true if a NEW queue entry was created, false if it was already queued.
+ */
+export const restoreSingleFromBackup = async (
+  date: string,
+  verificationId: string
+): Promise<boolean> => {
+  const record = await verificationBackup.readVerification(verificationId, date);
+  if (!record) throw new Error('Backup record not found');
+
+  const id = `restore_${verificationId}`;
+  if (await databaseService.hasPendingEnrollment(id)) {
+    return false; // already queued — nothing to do
+  }
+
+  const payload = verificationBackup.buildRestorePayload(record, date);
+  await databaseService.savePendingEnrollment(id, payload, Date.now());
+
+  const count = await databaseService.getPendingEnrollmentsCount();
+  useAuthStore.getState().setPendingUploadsCount(count);
+  logger.debug(`[Enrollment] Restored ${verificationId} into upload queue`);
+
+  // Kick off a sync attempt (no-op if offline)
+  void syncPendingEnrollments();
+  return true;
+};
+
+/**
+ * Scans the whole archive and re-queues every verification that is not marked
+ * synced. Used for disaster recovery when the pending queue was lost.
+ */
+export const restoreUnsyncedFromBackup = async (): Promise<{
+  restored: number;
+  alreadyQueued: number;
+  skippedSynced: number;
+}> => {
+  let restored = 0;
+  let alreadyQueued = 0;
+  let skippedSynced = 0;
+
+  const dates = await verificationBackup.listBackupDates();
+  for (const date of dates) {
+    const records = await verificationBackup.listVerificationsForDate(date);
+    for (const record of records) {
+      if (record.syncStatus === 'synced') {
+        skippedSynced++;
+        continue;
+      }
+      const id = `restore_${record.verificationId}`;
+      if (await databaseService.hasPendingEnrollment(id)) {
+        alreadyQueued++;
+        continue;
+      }
+      const payload = verificationBackup.buildRestorePayload(record, date);
+      await databaseService.savePendingEnrollment(id, payload, Date.now());
+      restored++;
+    }
+  }
+
+  const count = await databaseService.getPendingEnrollmentsCount();
+  useAuthStore.getState().setPendingUploadsCount(count);
+  logger.debug(
+    `[Enrollment] Restore complete — new:${restored} queued:${alreadyQueued} synced:${skippedSynced}`
+  );
+
+  if (restored > 0) void syncPendingEnrollments();
+  return { restored, alreadyQueued, skippedSynced };
 };
 
 // ─── API upload ───────────────────────────────────────────────────────────────
@@ -447,7 +530,11 @@ export const submitEnrollment = async (data: EnrollmentData): Promise<boolean> =
   }
 
   try {
-    return await uploadEnrollmentToApi(data);
+    const ok = await uploadEnrollmentToApi(data);
+    // Additive archival backup of the successfully-uploaded verification
+    // (non-blocking, never throws into this flow)
+    void verificationBackup.backupVerification(data, 'synced');
+    return ok;
   } catch (uploadErr) {
     logger.warn('[Enrollment] Online upload failed — falling back to offline save:', uploadErr);
     return saveEnrollmentOffline(data);

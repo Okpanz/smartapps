@@ -443,6 +443,25 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Backup & Restore Card */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('BackupRestore')}
+            className="bg-white rounded-2xl border border-gray-100 p-4 mt-4 flex-row items-center justify-between"
+          >
+            <View className="flex-row items-center flex-1">
+              <View className="w-10 h-10 rounded-full bg-green-50 items-center justify-center mr-3">
+                <Ionicons name="archive-outline" size={20} color="#10B981" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-base font-medium text-gray-900">Backup & Restore</Text>
+                <Text className="text-xs text-gray-500">
+                  Recover archived verifications
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+
         </View>
 
         {/* SECURITY */}

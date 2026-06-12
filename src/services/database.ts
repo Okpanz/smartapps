@@ -320,6 +320,16 @@ class DatabaseService {
     return rows;
   }
 
+  async hasPendingEnrollment(id: string): Promise<boolean> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+    const [results] = await this.db.executeSql(
+      `SELECT 1 FROM pending_enrollments WHERE id = ? LIMIT 1;`,
+      [id]
+    );
+    return results.rows.length > 0;
+  }
+
   async getPendingEnrollmentsCount(): Promise<number> {
     if (!this.db) await this.init();
     if (!this.db) throw new Error('Database not initialized');

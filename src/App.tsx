@@ -12,6 +12,7 @@ import TabNavigator from './navigation/TabNavigator';
 import EnrollmentNavigator from './navigation/EnrollmentNavigator';
 import DocumentVerificationNavigator from './navigation/DocumentVerificationNavigator';
 import ResumeVerificationNavigator from './navigation/ResumeVerificationNavigator';
+import BackupRestoreScreen from './screens/BackupRestore';
 import { NetworkIndicator } from './components/NetworkIndicator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useNetInfo } from '@react-native-community/netinfo';
@@ -90,6 +91,7 @@ export default function App() {
               <Stack.Screen name="Enrollment" component={EnrollmentNavigator} />
               <Stack.Screen name="DocumentVerification" component={DocumentVerificationNavigator} />
               <Stack.Screen name="ResumeVerification" component={ResumeVerificationNavigator} />
+              <Stack.Screen name="BackupRestore" component={BackupRestoreScreen} />
             </Stack.Navigator>
           </NavigationContainer>
         </ErrorBoundary>
