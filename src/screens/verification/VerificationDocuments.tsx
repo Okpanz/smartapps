@@ -9,7 +9,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 
 import { useEnrollmentStore, Document } from '../../hooks/useEnrollmentStore';
-import { submitEnrollment } from '../../services/enrollment';
+import { submitEnrollment, copyToDocumentDir } from '../../services/enrollment';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
@@ -37,10 +37,10 @@ export default function VerificationDocumentsScreen() {
     const navigation = useNavigation<any>();
     const stepLabels = ['Identify', 'Verify', 'Upload'];
     
-    // Use shallow selector
     const addDocument = useEnrollmentStore((state) => state.addDocument);
     const documents = useEnrollmentStore((state) => state.documents);
     const employee = useEnrollmentStore((state) => state.employee);
+    const resetEnrollment = useEnrollmentStore((state) => state.resetEnrollment);
     
     const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -102,6 +102,10 @@ export default function VerificationDocumentsScreen() {
     const selectedType = watch('type');
 
     const handleScanDocument = async () => {
+        if (!employee) {
+            showAlert('Error', 'Employee information not available', 'error');
+            return;
+        }
         try {
             const { scannedImages } = await DocumentScanner.scanDocument({
                 maxNumDocuments: 1
@@ -109,9 +113,11 @@ export default function VerificationDocumentsScreen() {
 
             if (scannedImages && scannedImages.length > 0) {
                 const scannedImageUri = scannedImages[0];
+                const employeeNo = employee.id;
+                const compressedUri = await copyToDocumentDir(scannedImageUri, `doc_${employeeNo}_scan_${Date.now()}`);
                 setSelectedFile({
-                    uri: scannedImageUri,
-                    name: `SCAN_${Date.now()}.jpg`,
+                    uri: compressedUri,
+                    name: `DOC_${employeeNo}_${Date.now()}.jpg`,
                     type: 'image/jpeg',
                 });
             }
@@ -151,43 +157,48 @@ export default function VerificationDocumentsScreen() {
     };
 
     const handleFinish = async () => {
-        if (!employee) return;
+    if (!employee) return;
 
-        if (documents.length === 0) {
-            showAlert('No Documents', 'Please add at least one document before finishing.', 'warning');
-            return;
+    if (documents.length === 0) {
+      showAlert('No Documents', 'Please add at least one document before finishing.', 'warning');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const faceImages = useEnrollmentStore.getState().images;
+      await submitEnrollment({
+        employeeId: employee.id,
+        employeeInfo: employee,
+        images: faceImages,
+        fingerprints: [],
+        documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
+        serviceId: employee.serviceId,
+      });
+
+      showAlert(
+        'Verification Saved', 
+        'Verification documents have been saved locally and will be synced with the server automatically.', 
+        'success',
+        () => {
+          resetEnrollment();
+          // Reset the root navigator to Tabs to clear the stack
+          navigation.getParent()?.reset({
+            index: 0,
+            routes: [{ name: 'Tabs' }],
+          });
+        },
+        {
+          confirmText: 'Return to Dashboard'
         }
-
-        setIsUploading(true);
-        try {
-            const faceImages = useEnrollmentStore.getState().images;
-            await submitEnrollment({
-                employeeId: employee.id,
-                employeeInfo: employee,
-                images: faceImages,
-                fingerprints: [],
-                documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
-            });
-
-            showAlert(
-                'Verification Complete', 
-                'Documents have been uploaded successfully.', 
-                'success',
-                () => {
-                    // Reset the root navigator to Tabs to clear the stack
-                    navigation.getParent()?.reset({
-                        index: 0,
-                        routes: [{ name: 'Tabs' }],
-                    });
-                }
-            );
-        } catch (error) {
-            console.error('Upload Error:', error);
-            showAlert('Error', 'Failed to upload documents. Please try again.', 'error');
-        } finally {
-            setIsUploading(false);
-        }
-    };
+      );
+    } catch (error) {
+      console.error('Upload Error:', error);
+      showAlert('Error', 'Failed to save documents. Please try again.', 'error');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
     return (
         <SafeAreaView className="flex-1 bg-background">

@@ -1,15 +1,30 @@
 import { Platform } from 'react-native';
 import RNFS from 'react-native-fs';
+import ImageResizer from '@bam.tech/react-native-image-resizer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo';
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import api from './api';
-import { databaseService } from './database';
+import { databaseService, RetryReason } from './database';
 import { notificationService } from './notification';
 import { verificationBackup } from './verificationBackup';
 import { tokenCache } from '../utils/tokenCache';
 import { logger } from '../utils/logger';
 import { useAuthStore } from '../hooks/useAuthStore';
 import { useEnrollmentStore, FingerprintData, Document } from '../hooks/useEnrollmentStore';
+import {
+  calculateFullJitterBackoff,
+  calculateAdaptiveTimeout,
+  classifyError,
+  isRetryable,
+  getCircuitBreakerState,
+  recordCircuitBreakerSuccess,
+  recordCircuitBreakerFailure,
+  isCircuitBreakerOpen,
+  BASE_BACKOFF_MS,
+  MAX_BACKOFF_MS,
+  JOB_POLL_TIMEOUT_MS,
+  MAX_RETRIES,
+} from './retryStrategy';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -20,6 +35,7 @@ interface EnrollmentData {
   fingerprints: FingerprintData[];
   documents?: Array<{ uri: string; type: string }>;
   status?: string;
+  serviceId?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -27,78 +43,63 @@ interface EnrollmentData {
 const ENROLLMENT_DIR = `${RNFS.DocumentDirectoryPath}/enrollments`;
 
 /**
- * Staged auto-retry backoff. Each entry is the wait BEFORE the next attempt,
- * applied only after the previous attempt failed:
- *   attempt 1 (immediate) → 1m → attempt 2 → 1m → attempt 3
- *     → 30m → attempt 4 → 1h → attempt 5 → 2h → attempt 6 → 4h → attempt 7
- * After the schedule is exhausted, auto-sync pauses until a manual/forced
- * retrigger (which resets the schedule and starts over).
+ * Calculate total payload size in bytes
  */
-const SYNC_BACKOFF_MS = [
-  60_000,        // after attempt 1 → +1 min
-  60_000,        // after attempt 2 → +1 min  (the 3 quick tries)
-  30 * 60_000,   // after attempt 3 → +30 min
-  60 * 60_000,   // after attempt 4 → +1 hour
-  120 * 60_000,  // after attempt 5 → +2 hours
-  240 * 60_000,  // after attempt 6 → +4 hours
-];
-const BACKOFF_KEY = 'sync_backoff_state';
+const calculatePayloadSize = async (data: EnrollmentData): Promise<number> => {
+  let total = 0;
 
-interface SyncBackoffState {
-  attempts: number;           // failed auto attempts so far (schedule index)
-  nextAttemptAt: number | null;
-  exhausted: boolean;
-}
+  // Add JSON size of the data structure
+  total += JSON.stringify(data).length;
 
-const EMPTY_BACKOFF: SyncBackoffState = { attempts: 0, nextAttemptAt: null, exhausted: false };
+  // Add size of all images
+  for (const uri of data.images || []) {
+    try {
+      const path = uri.replace(/^file:\/\//, '');
+      const stats = await RNFS.stat(path);
+      total += stats.size;
+    } catch {
+      // Ignore missing files
+    }
+  }
+
+  // Add size of all fingerprints
+  for (const fp of data.fingerprints || []) {
+    try {
+      const uri = typeof fp === 'string' ? fp : fp.uri;
+      const path = uri.replace(/^file:\/\//, '');
+      const stats = await RNFS.stat(path);
+      total += stats.size;
+    } catch {
+      // Ignore missing files
+    }
+  }
+
+  // Add size of all documents
+  for (const doc of data.documents || []) {
+    try {
+      const path = doc.uri.replace(/^file:\/\//, '');
+      const stats = await RNFS.stat(path);
+      total += stats.size;
+    } catch {
+      // Ignore missing files
+    }
+  }
+
+  return total;
+};
 
 // ─── Module-level sync guard ──────────────────────────────────────────────────
 
 let syncPendingInProgress = false;
 let syncRetryTimeout: ReturnType<typeof setTimeout> | null = null;
 
-// ─── Backoff state (persisted so it survives app restarts) ────────────────────
-
-const loadBackoff = async (): Promise<SyncBackoffState> =>
-  (await databaseService.getAppData<SyncBackoffState>(BACKOFF_KEY)) || { ...EMPTY_BACKOFF };
-
-const saveBackoff = (state: SyncBackoffState): Promise<void> =>
-  databaseService.saveAppData(BACKOFF_KEY, state);
-
-const resetBackoff = (): Promise<void> => databaseService.saveAppData(BACKOFF_KEY, { ...EMPTY_BACKOFF });
-
-const humanizeDelay = (ms: number): string => {
-  const mins = Math.round(ms / 60_000);
-  if (mins < 60) return `${mins} min`;
-  const hrs = mins / 60;
-  return `${hrs} hour${hrs === 1 ? '' : 's'}`;
-};
-
-/** Schedules a foreground timer to retry after `delayMs`. */
-const scheduleNextAttempt = (delayMs: number): void => {
-  if (syncRetryTimeout) clearTimeout(syncRetryTimeout);
-  syncRetryTimeout = setTimeout(() => {
-    syncRetryTimeout = null;
-    syncPendingEnrollments();
-  }, Math.max(0, delayMs));
-};
-
 /**
- * Re-arms the retry schedule on app launch using the persisted state, so the
- * 30m/1h/2h/4h waits survive the app being backgrounded or killed.
+ * Re-arms pending-upload syncing on app launch. The retry engine itself
+ * (per-row backoff + circuit breaker + job polling) decides what actually runs.
  */
 export const resumeSyncSchedule = async (): Promise<void> => {
   try {
-    const state = await loadBackoff();
-    if (state.exhausted) {
-      logger.debug('[Enrollment] Auto-sync is paused (backoff exhausted) — awaiting manual retrigger');
-      return;
-    }
-    if (state.nextAttemptAt && Date.now() < state.nextAttemptAt) {
-      scheduleNextAttempt(state.nextAttemptAt - Date.now());
-    } else {
-      void syncPendingEnrollments();
-    }
+    await syncPendingEnrollments();
   } catch (err) {
     logger.warn('[Enrollment] resumeSyncSchedule failed (non-fatal):', err);
   }
@@ -113,12 +114,62 @@ const ensureEnrollmentDir = async (): Promise<void> => {
 };
 
 /**
+ * Compresses an image file to ~70% quality and optimizes size
+ */
+const compressImage = async (uri: string, prefix: string): Promise<string> => {
+  try {
+    // Strip file:// for RNFS operations
+    const srcPath = uri.replace(/^file:\/\//, '');
+
+    if (!(await RNFS.exists(srcPath))) {
+      console.warn(`[Enrollment] Source file not found for compression: ${uri}`);
+      return uri;
+    }
+
+    await ensureEnrollmentDir();
+    
+    // Get original image size
+    const originalStats = await RNFS.stat(srcPath);
+    const originalSizeKB = (originalStats.size / 1024).toFixed(2);
+    console.log(`\n🗜️ IMAGE COMPRESSION (${prefix})`);
+    console.log(`Original size: ${originalSizeKB} KB`);
+    
+    // Compress the image - target ~70% quality, max width/height 1920px
+    const compressedResult = await ImageResizer.createResizedImage(
+      uri,
+      1920,
+      1920,
+      'JPEG',
+      70, // 70% quality
+      0, // rotation
+      ENROLLMENT_DIR,
+      true, // keep metadata
+      { mode: 'contain', onlyScaleDown: true } // only scale down if larger than target
+    );
+
+    // Get compressed image size
+    const compressedStats = await RNFS.stat(compressedResult.path);
+    const compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
+    const reductionPercent = ((1 - (compressedStats.size / originalStats.size)) * 100).toFixed(1);
+    
+    console.log(`Compressed size: ${compressedSizeKB} KB (-${reductionPercent}%)`);
+    console.log(`Saved ${(originalStats.size - compressedStats.size).toFixed(0)} bytes`);
+    
+    return compressedResult.uri;
+  } catch (err) {
+    console.warn(`[Enrollment] Image compression failed, using original: ${uri}`, err);
+    return uri;
+  }
+};
+
+/**
  * Copies a file URI into the app's permanent DocumentDirectory so it survives
  * cache eviction and app restarts. Returns the new `file://` URI.
  * If the file is already in DocumentDirectory or the source is missing, returns
  * the original URI unchanged (callers must handle the missing-file case).
+ * Images are automatically compressed to ~70% quality to save space.
  */
-const copyToDocumentDir = async (uri: string, prefix: string): Promise<string> => {
+export const copyToDocumentDir = async (uri: string, prefix: string): Promise<string> => {
   if (!uri) return uri;
 
   // Already in permanent storage — nothing to do
@@ -133,7 +184,11 @@ const copyToDocumentDir = async (uri: string, prefix: string): Promise<string> =
 
   await ensureEnrollmentDir();
 
-  const ext = srcPath.split('.').pop() || 'jpg';
+  const ext = srcPath.split('.').pop()?.toLowerCase() || 'jpg';
+  if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+    return await compressImage(uri, prefix);
+  }
+
   const destPath = `${ENROLLMENT_DIR}/${prefix}_${Date.now()}.${ext}`;
   await RNFS.copyFile(srcPath, destPath);
   return `file://${destPath}`;
@@ -150,7 +205,7 @@ const persistEnrollmentFiles = async (data: EnrollmentData): Promise<EnrollmentD
       return await copyToDocumentDir(uri, prefix);
     } catch (err) {
       logger.warn('[Enrollment] Could not copy file to DocumentDir:', uri, err);
-      return uri; // keep original so the entry is not silently corrupted
+      return uri; 
     }
   };
 
@@ -215,16 +270,96 @@ const migrateLegacyPendingEnrollments = async (): Promise<void> => {
   }
 };
 
+// ─── Logging ──────────────────────────────────────────────────────────────────
+
+const logPayloadDetails = async (data: EnrollmentData): Promise<void> => {
+  try {
+    console.log('==============================================');
+    console.log('📊 ENROLLMENT PAYLOAD DETAILS');
+    console.log('==============================================');
+    
+    // Log overall payload info
+    const payloadSize = JSON.stringify(data).length;
+    console.log(`Employee ID: ${data.employeeId}`);
+    console.log(`Total Size: ${(payloadSize / 1024).toFixed(2)} KB`);
+    console.log(`Face Images: ${(data.images || []).length}`);
+    console.log(`Fingerprints: ${(data.fingerprints || []).length}`);
+    console.log(`Documents: ${(data.documents || []).length}`);
+
+    // Log individual face image sizes
+    if (data.images && data.images.length > 0) {
+      console.log('\n📷 Face Image Sizes:');
+      for (let i = 0; i < data.images.length; i++) {
+        try {
+          const uri = data.images[i];
+          const path = uri.replace(/^file:\/\//, '');
+          const stats = await RNFS.stat(path);
+          const sizeKB = (stats.size / 1024).toFixed(2);
+          console.log(`  - Image ${i + 1}: ${sizeKB} KB`);
+        } catch (err) {
+          console.log(`  - Image ${i + 1}: Size unavailable`);
+        }
+      }
+    }
+
+    // Log individual fingerprint image sizes
+    if (data.fingerprints && data.fingerprints.length > 0) {
+      console.log('\n🖐️ Fingerprint Sizes:');
+      for (let i = 0; i < data.fingerprints.length; i++) {
+        try {
+          const fp = data.fingerprints[i];
+          const uri = typeof fp === 'string' ? fp : fp.uri;
+          const path = uri.replace(/^file:\/\//, '');
+          const stats = await RNFS.stat(path);
+          const sizeKB = (stats.size / 1024).toFixed(2);
+          const type = typeof fp !== 'string' ? fp.type : 'Unknown';
+          console.log(`  - Fingerprint ${i + 1} (${type}): ${sizeKB} KB`);
+        } catch (err) {
+          console.log(`  - Fingerprint ${i + 1}: Size unavailable`);
+        }
+      }
+    }
+
+    // Log individual document sizes
+    if (data.documents && data.documents.length > 0) {
+      console.log('\n📄 Document Sizes:');
+      for (let i = 0; i < data.documents.length; i++) {
+        try {
+          const doc = data.documents[i];
+          const path = doc.uri.replace(/^file:\/\//, '');
+          const stats = await RNFS.stat(path);
+          const sizeKB = (stats.size / 1024).toFixed(2);
+          console.log(`  - Document ${i + 1} (${doc.type}): ${sizeKB} KB`);
+        } catch (err) {
+          console.log(`  - Document ${i + 1}: Size unavailable`);
+        }
+      }
+    }
+
+    console.log('==============================================\n');
+  } catch (err) {
+    console.warn('[Enrollment Payload] Failed to log details:', err);
+  }
+};
+
 // ─── Offline save ─────────────────────────────────────────────────────────────
 
-const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => {
+const saveEnrollmentOffline = async (data: EnrollmentData, id?: string): Promise<string> => {
   logger.debug('[Enrollment] Saving offline for:', data.employeeId);
+
+  await logPayloadDetails(data);
 
   // Copy all captured files to permanent storage before persisting URIs
   const persistedData = await persistEnrollmentFiles(data);
 
-  const id = `offline_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  await databaseService.savePendingEnrollment(id, persistedData, Date.now());
+  const enrollmentId = id || `offline_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  await databaseService.savePendingEnrollment(enrollmentId, persistedData, Date.now());
+
+  // Calculate and save payload size
+  const payloadSizeBytes = await calculatePayloadSize(persistedData);
+  await databaseService.recordAttempt(enrollmentId, {
+    payloadSizeBytes,
+  });
 
   const count = await databaseService.getPendingEnrollmentsCount();
   useAuthStore.getState().setPendingUploadsCount(count);
@@ -236,7 +371,7 @@ const saveEnrollmentOffline = async (data: EnrollmentData): Promise<boolean> => 
   void verificationBackup.backupVerification(persistedData, 'pending');
 
   logger.debug(`[Enrollment] Saved offline. Total pending: ${count}`);
-  return true;
+  return enrollmentId;
 };
 
 // ─── Count helper ─────────────────────────────────────────────────────────────
@@ -253,12 +388,12 @@ export const checkPendingEnrollments = async (): Promise<void> => {
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
 /**
- * Uploads all pending enrollments.
+ * Uploads all pending enrollments using the per-row retry engine
+ * (full-jitter backoff + circuit breaker + async job polling).
  *
- * Auto-runs respect the staged backoff schedule (SYNC_BACKOFF_MS): they no-op
- * while a wait is pending or after the schedule is exhausted. A forced run
- * (manual "Upload Pending Records", a restore, or a network reconnect) resets
- * the schedule and uploads immediately.
+ * Auto-runs honour each row's `next_retry_at` and the circuit breaker. A forced
+ * run (manual "Upload Pending Records", a restore, or a network reconnect)
+ * bypasses both and attempts every row immediately.
  */
 export const syncPendingEnrollments = async (
   opts: { force?: boolean } = {}
@@ -267,24 +402,15 @@ export const syncPendingEnrollments = async (
   syncPendingInProgress = true;
 
   try {
-    // ── Backoff gate ──────────────────────────────────────────────────────
-    if (opts.force) {
-      await resetBackoff();
-      if (syncRetryTimeout) {
-        clearTimeout(syncRetryTimeout);
-        syncRetryTimeout = null;
-      }
-    } else {
-      const state = await loadBackoff();
-      if (state.exhausted) {
-        logger.debug('[Enrollment] Sync skipped — backoff exhausted (manual retrigger required)');
-        return;
-      }
-      if (state.nextAttemptAt && Date.now() < state.nextAttemptAt) {
-        // Not yet time — make sure a timer is armed for the remaining wait
-        scheduleNextAttempt(state.nextAttemptAt - Date.now());
-        return;
-      }
+    // A forced run clears any armed retry timer and probes through an open
+    // circuit breaker; auto-runs back off while the breaker is open.
+    if (opts.force && syncRetryTimeout) {
+      clearTimeout(syncRetryTimeout);
+      syncRetryTimeout = null;
+    }
+    if (!opts.force && isCircuitBreakerOpen()) {
+      logger.debug('[Enrollment] Circuit breaker open — skipping auto-sync');
+      return;
     }
 
     const netState = await NetInfo.fetch();
@@ -293,10 +419,9 @@ export const syncPendingEnrollments = async (
     // One-time migration from legacy AsyncStorage format
     await migrateLegacyPendingEnrollments();
 
-    const pending = await databaseService.getPendingEnrollments();
+    const pending = await databaseService.getPrioritizedPendingEnrollments();
     if (pending.length === 0) {
       useAuthStore.getState().setPendingUploadsCount(0);
-      await resetBackoff();
       return;
     }
 
@@ -304,12 +429,11 @@ export const syncPendingEnrollments = async (
     useAuthStore.getState().setUploadStatus('syncing');
     notificationService.notifySyncStatus(
       'syncing',
-      `Uploading ${pending.length} pending enrollment${pending.length === 1 ? '' : 's'}...`
+      `Syncing ${pending.length} pending enrollment${pending.length === 1 ? '' : 's'}...`
     );
 
-    // Only transient failures drive the backoff schedule; permanent client
-    // errors (4xx) are set aside and won't succeed on retry.
-    let transientFailures = 0;
+    let failCount = 0;
+    let nextRetryDelay = MAX_BACKOFF_MS;
 
     for (const row of pending) {
       let enrollmentData: EnrollmentData;
@@ -321,75 +445,135 @@ export const syncPendingEnrollments = async (
         continue;
       }
 
+      // Respect this row's backoff window unless this is a forced run
+      if (!opts.force && row.last_attempt_at && row.next_retry_at) {
+        if (Date.now() < row.next_retry_at) {
+          const remainingDelay = row.next_retry_at - Date.now();
+          nextRetryDelay = Math.min(nextRetryDelay, remainingDelay);
+          logger.debug(`[Enrollment] Row ${row.id} still waiting ${Math.ceil(remainingDelay/1000)}s for backoff`);
+          continue;
+        }
+      }
+
+      if (row.job_id) {
+        try {
+          const jobStatusResponse = await getJobStatus(row.job_id);
+          logger.debug(`[Enrollment] Job ${row.job_id} status:`, jobStatusResponse);
+
+          const backendStatus = jobStatusResponse.data?.fromMongo?.status ||
+                                jobStatusResponse.data?.fromQueue?.state;
+
+          if (backendStatus === 'completed') {
+            // Job completed successfully! Remove from pending
+            await databaseService.removePendingEnrollment(row.id);
+            // Mark the archival backup as synced (non-blocking)
+            void verificationBackup.markSynced(enrollmentData.employeeId);
+            logger.debug(`[Enrollment] Job ${row.job_id} completed — removed pending`);
+            continue;
+          } else if (backendStatus === 'failed') {
+            // Job failed on backend — update our status with error
+            const errorMsg = jobStatusResponse.data?.fromMongo?.error_message ||
+                             jobStatusResponse.data?.fromQueue?.failedReason ||
+                             'Unknown error';
+            await databaseService.updatePendingEnrollmentStatus(
+              row.id,
+              'permanently_failed',
+              `Backend job failed: ${errorMsg}`
+            );
+            failCount++;
+            continue;
+          }
+          continue;
+        } catch (err) {
+          logger.warn(`[Enrollment] Failed to check job status for ${row.job_id} — will retry`, err);
+          continue;
+        }
+      }
+
+      if (row.retry_count >= MAX_RETRIES) continue;
+
       try {
-        await uploadEnrollmentToApi(enrollmentData);
-        // Atomic removal immediately after success — prevents duplicate on crash
-        await databaseService.removePendingEnrollment(row.id);
-        // Keep the archival backup's sync status accurate (non-blocking)
-        void verificationBackup.markSynced(enrollmentData.employeeId);
-        logger.debug(`[Enrollment] Synced ${row.id}`);
+        const response = await uploadEnrollmentToApi(enrollmentData, row.payload_size_bytes || 0);
+        recordCircuitBreakerSuccess();
+        const jobId = response?.data?.jobId;
+        if (jobId) {
+          // Async job accepted — keep the row pending until polling confirms it.
+          await databaseService.updatePendingEnrollmentJobId(row.id, jobId);
+          logger.debug(`[Enrollment] Uploaded ${row.id}, got jobId: ${jobId}`);
+        } else {
+          // Server accepted synchronously (no job id) — done.
+          await databaseService.removePendingEnrollment(row.id);
+          void verificationBackup.markSynced(enrollmentData.employeeId);
+          logger.debug(`[Enrollment] Synced ${row.id} (no job id)`);
+        }
       } catch (err: any) {
         const httpStatus: number | undefined = err?.response?.status;
 
         if (httpStatus === 409) {
           // Server already has this record — discard without retrying
           await databaseService.removePendingEnrollment(row.id);
+          void verificationBackup.markSynced(enrollmentData.employeeId);
           logger.warn(`[Enrollment] 409 Conflict for ${row.id} — discarding duplicate`);
           continue;
         }
 
-        if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) {
-          // Permanent client error (400, 403, 422…) — set aside, notify once.
-          // Does NOT drive the backoff schedule (retrying won't help).
-          await databaseService.incrementPendingRetry(row.id, err.message, true);
-          notificationService.notifyMessage(
-            'Enrollment Upload Rejected',
-            `The server rejected the enrollment for employee ${enrollmentData.employeeId}. Please contact support.`,
-            'high'
-          );
-          continue;
+        const reason = classifyError(err);
+        const newRetryCount = row.retry_count + 1;
+        const permanent = !isRetryable(reason) || newRetryCount >= MAX_RETRIES;
+
+        let nextRetryAt: number | undefined = undefined;
+        if (!permanent) {
+          const backoff = calculateFullJitterBackoff(newRetryCount);
+          nextRetryAt = Date.now() + backoff;
+          nextRetryDelay = Math.min(nextRetryDelay, backoff);
         }
 
-        // Transient failure (network, 5xx, 429, missing file) — keep for retry.
-        await databaseService.incrementPendingRetry(row.id, err.message, false);
-        transientFailures++;
+        recordCircuitBreakerFailure();
+
+        await databaseService.recordAttempt(row.id, {
+          retryCount: newRetryCount,
+          lastAttemptAt: Date.now(),
+          nextRetryAt: nextRetryAt,
+          errorMessage: err.message,
+          retryReason: reason,
+          lastUploadDurationMs: err.uploadDurationMs,
+          networkType: (await NetInfo.fetch()).type,
+          status: permanent ? 'permanently_failed' : 'failed',
+        });
+
+        if (permanent) {
+          notificationService.notifyMessage(
+            'Enrollment Upload Failed',
+            `Could not sync enrollment for employee ${enrollmentData.employeeId}. Please contact support.`,
+            'high'
+          );
+        }
+        failCount++;
       }
     }
 
     const remaining = await databaseService.getPendingEnrollmentsCount();
     useAuthStore.getState().setPendingUploadsCount(remaining);
 
-    if (transientFailures === 0) {
-      // Everything either uploaded or was set aside as a permanent error —
-      // nothing left for the schedule to retry.
-      await resetBackoff();
+    if (failCount === 0 && remaining === 0) {
       useAuthStore.getState().setUploadStatus('success');
-      notificationService.notifySyncStatus('completed', 'All pending uploads processed.');
+      notificationService.notifySyncStatus('completed', 'All pending enrollments processed.');
       setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
-      return;
-    }
-
-    // Advance the backoff schedule.
-    useAuthStore.getState().setUploadStatus('error');
-    const prev = await loadBackoff();
-    const attempts = prev.attempts + 1;
-    const delay = SYNC_BACKOFF_MS[attempts - 1];
-
-    if (delay === undefined) {
-      await saveBackoff({ attempts, nextAttemptAt: null, exhausted: true });
-      notificationService.notifySyncStatus(
-        'failed',
-        'Automatic upload paused after several attempts. Open Settings and tap "Upload Pending Records" to retry.'
-      );
-      logger.warn('[Enrollment] Backoff exhausted — auto-sync paused until manual retrigger');
     } else {
-      const nextAttemptAt = Date.now() + delay;
-      await saveBackoff({ attempts, nextAttemptAt, exhausted: false });
-      notificationService.notifySyncStatus(
-        'failed',
-        `${transientFailures} upload${transientFailures === 1 ? '' : 's'} failed. Next retry in ${humanizeDelay(delay)}.`
-      );
-      scheduleNextAttempt(delay);
+      useAuthStore.getState().setUploadStatus(failCount > 0 ? 'error' : 'idle');
+      if (failCount > 0) {
+        notificationService.notifySyncStatus(
+          'failed',
+          `${failCount} issue${failCount === 1 ? '' : 's'} found. Will check again.`
+        );
+      }
+
+      // Schedule next sync based on earliest backoff
+      if (syncRetryTimeout) clearTimeout(syncRetryTimeout);
+      syncRetryTimeout = setTimeout(() => {
+        syncRetryTimeout = null;
+        syncPendingEnrollments();
+      }, Math.min(nextRetryDelay, MAX_BACKOFF_MS));
     }
   } catch (err: any) {
     logger.error('[Enrollment] Sync error:', err);
@@ -476,15 +660,29 @@ export const restoreUnsyncedFromBackup = async (): Promise<{
 
 // ─── API upload ───────────────────────────────────────────────────────────────
 
-const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => {
+const getJobStatus = async (jobId: string, token?: string): Promise<any> => {
+  const apiToken = token || (await AsyncStorage.getItem('userToken'));
+  const response = await api.get(`/mobile/v1/enrollments/queue/job/${jobId}`, {
+    headers: { Authorization: apiToken ? `Bearer ${apiToken}` : '' },
+  });
+  return response.data;
+};
+
+const uploadEnrollmentToApi = async (
+  data: EnrollmentData,
+  payloadSizeBytes: number
+): Promise<any> => {
   logger.debug('[Enrollment] Uploading for employee:', data.employeeId);
 
   const formData = new FormData();
   formData.append('employee_id', data.employeeId);
   formData.append('device_platform', Platform.OS);
   formData.append('timestamp', new Date().toISOString());
+  if (data.serviceId) {
+    formData.append('service_id', data.serviceId);
+    formData.append('serviceId', data.serviceId);
+  }
 
-  // Remote image URLs that don't need re-uploading
   try {
     const keptRemote = (data.images || []).filter((u) => {
       if (!u) return false;
@@ -579,13 +777,17 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
     formData.append('document_types', JSON.stringify(documentTypes));
   }
 
+  // Calculate adaptive timeout
+  const timeoutMs = calculateAdaptiveTimeout(payloadSizeBytes);
+
   // Use fetch (not axios) for reliable FormData/multipart handling in React Native
   const baseURL = api.defaults.baseURL;
   const token = tokenCache.get() || (await AsyncStorage.getItem('userToken'));
   const url = `${baseURL}/mobile/v1/enrollments`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const uploadStartTime = Date.now();
 
   let response: Response;
   try {
@@ -601,10 +803,11 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
     });
   } catch (err: any) {
     clearTimeout(timeoutId);
-    if (err.name === 'AbortError') throw new Error('Upload timed out after 30 s');
+    if (err.name === 'AbortError') throw new Error(`Upload timed out after ${timeoutMs / 1000} s`);
     throw err;
   }
   clearTimeout(timeoutId);
+  const uploadDurationMs = Date.now() - uploadStartTime;
 
   const responseText = await response.text();
   let responseData: any = null;
@@ -626,7 +829,8 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
 
   if (response.ok && !bodyDeniesSuccess) {
     logger.debug('[Enrollment] Upload successful:', responseData?.message ?? `HTTP ${response.status}`);
-    return true;
+    // Return the full response (with any jobId) plus the measured duration.
+    return { ...(responseData ?? {}), uploadDurationMs };
   }
 
   // Non-2xx, or a 2xx the body explicitly rejected. Preserve the HTTP status
@@ -636,13 +840,20 @@ const uploadEnrollmentToApi = async (data: EnrollmentData): Promise<boolean> => 
       (responseText ? responseText.slice(0, 120) : `Server error ${response.status}`)
   );
   (err as any).response = { status: response.status, data: responseData };
+  (err as any).uploadDurationMs = uploadDurationMs;
   throw err;
 };
 
-// ─── Public submit entry-point ─────────────────────────────────────────────────
 
-export const submitEnrollment = async (data: EnrollmentData): Promise<boolean> => {
-  logger.debug('[Enrollment] Submitting for:', data.employeeId);
+export const submitEnrollment = async (data: EnrollmentData): Promise<{ success: boolean, enrollmentId: string }> => {
+  console.log('[Enrollment] Submitting for:', data.employeeId);
+  
+  // Always log payload details, both online and offline
+  await logPayloadDetails(data);
+
+  // First, save locally to ensure we have a copy
+  const enrollmentId = await saveEnrollmentOffline(data);
+  console.log('[Enrollment] Saved locally with id:', enrollmentId);
 
   const netState = await NetInfo.fetch();
   const isOffline =
@@ -650,19 +861,28 @@ export const submitEnrollment = async (data: EnrollmentData): Promise<boolean> =
     (netState.isConnected === true && netState.isInternetReachable === false);
 
   if (isOffline) {
-    logger.debug('[Enrollment] Offline — saving locally');
-    return saveEnrollmentOffline(data);
+    console.log('[Enrollment] Offline — keeping local');
+    return { success: true, enrollmentId };
   }
 
   try {
-    const ok = await uploadEnrollmentToApi(data);
-    // Additive archival backup of the successfully-uploaded verification
-    // (non-blocking, never throws into this flow)
-    void verificationBackup.backupVerification(data, 'synced');
-    return ok;
+    const payloadSize = await calculatePayloadSize(data);
+    const response = await uploadEnrollmentToApi(data, payloadSize);
+    console.log('[Enrollment] Got server response:', response);
+    if (response.data?.jobId) {
+      await databaseService.recordAttempt(enrollmentId, {
+        jobId: response.data.jobId,
+        jobPollStartedAt: Date.now(),
+        payloadSizeBytes: payloadSize,
+        lastUploadDurationMs: response.uploadDurationMs,
+        networkType: (await NetInfo.fetch()).type,
+      });
+      console.log('[Enrollment] Updated pending enrollment with jobId:', response.data.jobId);
+    }
+    return { success: true, enrollmentId };
   } catch (uploadErr) {
-    logger.warn('[Enrollment] Online upload failed — falling back to offline save:', uploadErr);
-    return saveEnrollmentOffline(data);
+    console.warn('[Enrollment] Online upload failed — keeping local:', uploadErr);
+    return { success: true, enrollmentId }; // Still considered "success" because we saved locally
   }
 };
 

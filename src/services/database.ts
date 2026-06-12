@@ -21,14 +21,33 @@ export interface EmployeeRecord {
   raw_data: string;
 }
 
+export type RetryReason =
+  | 'network_unreachable'
+  | 'timeout'
+  | 'dns_failure'
+  | 'ssl_failure'
+  | 'http_429'
+  | 'http_5xx'
+  | 'http_4xx_permanent'
+  | 'missing_local_files'
+  | 'unknown';
+
 export interface PendingEnrollmentRow {
   id: string;
-  payload: string;           // JSON-serialised EnrollmentData
+  payload: string;           
   status: string;
   retry_count: number;
   created_at: number;
+  first_attempt_at: number | null;
   last_attempt_at: number | null;
+  next_retry_at: number | null;
   error_message: string | null;
+  retry_reason: RetryReason | null;
+  job_id: string | null;
+  job_poll_started_at: number | null;
+  payload_size_bytes: number | null;
+  last_upload_duration_ms: number | null;
+  network_type: string | null;
 }
 
 // Collision-resistant local ID — no external dependency
@@ -111,14 +130,63 @@ class DatabaseService {
     // Pending enrollments queue (replaces AsyncStorage JSON blob)
     await this.db.executeSql(`
       CREATE TABLE IF NOT EXISTS pending_enrollments (
-        id              TEXT PRIMARY KEY,
-        payload         TEXT NOT NULL,
-        status          TEXT NOT NULL DEFAULT 'pending',
-        retry_count     INTEGER NOT NULL DEFAULT 0,
-        created_at      INTEGER NOT NULL,
-        last_attempt_at INTEGER,
-        error_message   TEXT
+        id                    TEXT PRIMARY KEY,
+        payload               TEXT NOT NULL,
+        status                TEXT NOT NULL DEFAULT 'pending',
+        retry_count           INTEGER NOT NULL DEFAULT 0,
+        created_at            INTEGER NOT NULL,
+        first_attempt_at      INTEGER,
+        last_attempt_at       INTEGER,
+        next_retry_at         INTEGER,
+        error_message         TEXT,
+        retry_reason          TEXT,
+        job_id                TEXT,
+        job_poll_started_at   INTEGER,
+        payload_size_bytes    INTEGER,
+        last_upload_duration_ms INTEGER,
+        network_type          TEXT
       );
+    `);
+    
+    // Add missing columns if they don't exist yet (for existing databases)
+    await this.db.executeSql(`
+      PRAGMA table_info(pending_enrollments);
+    `).then(async (results) => {
+      const columns = results[0].rows.raw();
+      const columnsByName = new Set(columns.map((col: any) => col.name));
+      
+      const newColumns = [
+        { name: 'job_id', type: 'TEXT' },
+        { name: 'retry_backoff', type: 'INTEGER' },
+        { name: 'first_attempt_at', type: 'INTEGER' },
+        { name: 'next_retry_at', type: 'INTEGER' },
+        { name: 'retry_reason', type: 'TEXT' },
+        { name: 'job_poll_started_at', type: 'INTEGER' },
+        { name: 'payload_size_bytes', type: 'INTEGER' },
+        { name: 'last_upload_duration_ms', type: 'INTEGER' },
+        { name: 'network_type', type: 'TEXT' },
+      ];
+      
+      for (const col of newColumns) {
+        if (!columnsByName.has(col.name)) {
+          try {
+            await this.db?.executeSql(`ALTER TABLE pending_enrollments ADD COLUMN ${col.name} ${col.type};`);
+            logger.debug(`[Database] Added ${col.name} column to pending_enrollments`);
+          } catch (err) {
+            logger.warn(`[Database] Failed to add ${col.name} column:`, err);
+          }
+        }
+      }
+    }).catch(() => {
+      // Ignore errors (e.g., column already exists)
+    });
+
+    // Indexes for efficient queries
+    await this.db.executeSql(`
+      CREATE INDEX IF NOT EXISTS idx_pending_next_retry ON pending_enrollments (next_retry_at);
+    `);
+    await this.db.executeSql(`
+      CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_enrollments (status);
     `);
   }
 
@@ -293,15 +361,45 @@ class DatabaseService {
   async savePendingEnrollment(
     id: string,
     data: any,
-    createdAt: number
+    createdAt: number,
+    jobId?: string
   ): Promise<void> {
     if (!this.db) await this.init();
     if (!this.db) throw new Error('Database not initialized');
     await this.db.executeSql(
       `INSERT OR IGNORE INTO pending_enrollments
-         (id, payload, status, retry_count, created_at)
-       VALUES (?, ?, 'pending', 0, ?);`,
-      [id, JSON.stringify(data), createdAt]
+         (id, payload, status, retry_count, created_at, job_id)
+       VALUES (?, ?, 'pending', 0, ?, ?);`,
+      [id, JSON.stringify(data), createdAt, jobId || null]
+    );
+  }
+
+  async updatePendingEnrollmentJobId(
+    id: string,
+    jobId: string
+  ): Promise<void> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+    await this.db.executeSql(
+      `UPDATE pending_enrollments
+       SET job_id = ?, status = 'queued'
+       WHERE id = ?;`,
+      [jobId, id]
+    );
+  }
+
+  async updatePendingEnrollmentStatus(
+    id: string,
+    status: string,
+    errorMessage?: string
+  ): Promise<void> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+    await this.db.executeSql(
+      `UPDATE pending_enrollments
+       SET status = ?, error_message = ?
+       WHERE id = ?;`,
+      [status, errorMessage || null, id]
     );
   }
 
@@ -349,27 +447,126 @@ class DatabaseService {
     );
   }
 
-  async incrementPendingRetry(
+  async recordAttempt(
     id: string,
-    errorMessage: string,
-    permanently: boolean
+    options: {
+      firstAttemptAt?: number;
+      lastAttemptAt?: number;
+      nextRetryAt?: number;
+      errorMessage?: string;
+      retryReason?: RetryReason;
+      retryCount?: number;
+      status?: string;
+      jobId?: string;
+      jobPollStartedAt?: number;
+      payloadSizeBytes?: number;
+      lastUploadDurationMs?: number;
+      networkType?: string;
+    }
   ): Promise<void> {
     if (!this.db) await this.init();
     if (!this.db) throw new Error('Database not initialized');
+
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (options.firstAttemptAt !== undefined) {
+      fields.push('first_attempt_at = ?');
+      values.push(options.firstAttemptAt);
+    }
+    if (options.lastAttemptAt !== undefined) {
+      fields.push('last_attempt_at = ?');
+      values.push(options.lastAttemptAt);
+    }
+    if (options.nextRetryAt !== undefined) {
+      fields.push('next_retry_at = ?');
+      values.push(options.nextRetryAt);
+    }
+    if (options.errorMessage !== undefined) {
+      fields.push('error_message = ?');
+      values.push(options.errorMessage);
+    }
+    if (options.retryReason !== undefined) {
+      fields.push('retry_reason = ?');
+      values.push(options.retryReason);
+    }
+    if (options.retryCount !== undefined) {
+      fields.push('retry_count = ?');
+      values.push(options.retryCount);
+    }
+    if (options.status !== undefined) {
+      fields.push('status = ?');
+      values.push(options.status);
+    }
+    if (options.jobId !== undefined) {
+      fields.push('job_id = ?');
+      values.push(options.jobId);
+    }
+    if (options.jobPollStartedAt !== undefined) {
+      fields.push('job_poll_started_at = ?');
+      values.push(options.jobPollStartedAt);
+    }
+    if (options.payloadSizeBytes !== undefined) {
+      fields.push('payload_size_bytes = ?');
+      values.push(options.payloadSizeBytes);
+    }
+    if (options.lastUploadDurationMs !== undefined) {
+      fields.push('last_upload_duration_ms = ?');
+      values.push(options.lastUploadDurationMs);
+    }
+    if (options.networkType !== undefined) {
+      fields.push('network_type = ?');
+      values.push(options.networkType);
+    }
+
+    if (fields.length === 0) return;
+
+    values.push(id);
+
     await this.db.executeSql(
-      `UPDATE pending_enrollments
-       SET retry_count     = retry_count + 1,
-           last_attempt_at = ?,
-           error_message   = ?,
-           status          = ?
-       WHERE id = ?;`,
-      [
-        Date.now(),
-        errorMessage,
-        permanently ? 'permanently_failed' : 'failed',
-        id,
-      ]
+      `UPDATE pending_enrollments SET ${fields.join(', ')} WHERE id = ?;`,
+      values
     );
+  }
+
+  async getPrioritizedPendingEnrollments(): Promise<PendingEnrollmentRow[]> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+    const now = Date.now();
+    
+    const [results] = await this.db.executeSql(
+      `SELECT * FROM pending_enrollments
+       WHERE status IN ('pending', 'failed')
+       AND (next_retry_at IS NULL OR next_retry_at <= ?)
+       ORDER BY
+         -- Priority 1: small payloads first
+         CASE WHEN payload_size_bytes < 5000000 THEN 0 ELSE 1 END ASC,
+         -- Priority 2: oldest first
+         created_at ASC,
+         -- Priority 3: failed retries last
+         retry_count ASC;`,
+      [now]
+    );
+    
+    const rows: PendingEnrollmentRow[] = [];
+    for (let i = 0; i < results.rows.length; i++) {
+      rows.push(results.rows.item(i));
+    }
+    return rows;
+  }
+
+  async getEarliestNextRetry(): Promise<number | null> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+    
+    const [results] = await this.db.executeSql(
+      `SELECT MIN(next_retry_at) as min_next FROM pending_enrollments
+       WHERE status IN ('pending', 'failed')
+       AND next_retry_at IS NOT NULL;`
+    );
+    
+    const minNext = results.rows.item(0).min_next;
+    return minNext ? Number(minNext) : null;
   }
 
   async clearAllPendingEnrollments(): Promise<void> {
