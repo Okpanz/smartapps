@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,13 @@ import {
   TextInput,
   ActivityIndicator,
   Switch,
-  Modal
+  Modal,
+  StatusBar
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTabBarBottomInset } from '../../navigation/TabNavigator';
 import { useAuthStore } from '../../hooks/useAuthStore';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { changePassword, downloadOfflineRecords, createAdhockStaff } from '../../services/auth';
 import { syncPendingEnrollments } from '../../services/enrollment';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -77,6 +78,12 @@ export default function SettingsScreen() {
       type: 'info',
       showCancel: false
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      StatusBar.setBarStyle('dark-content');
+    }, [])
+  );
 
   const showAlert = (
       title: string, 

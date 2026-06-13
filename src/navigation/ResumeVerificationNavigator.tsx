@@ -1,5 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { COLORS } from '../constants/theme';
 import VerificationDetailsScreen from '../screens/verification/VerificationDetails';
 import DocumentUploadScreen from '../screens/enrollment/documents';
 import FingerprintScreen from '../screens/enrollment/fingerprint';
@@ -13,11 +14,14 @@ export default function ResumeVerificationNavigator() {
         <Stack.Navigator
             screenOptions={{
                 headerStyle: {
-                    backgroundColor: '#fff',
+                    backgroundColor: COLORS.primary,
                 },
-                headerTintColor: '#000',
+                headerTintColor: COLORS.onPrimary,
+                headerTitleStyle: {
+                    color: COLORS.onPrimary,
+                },
                 contentStyle: {
-                    backgroundColor: '#ffffff',
+                    backgroundColor: COLORS.background,
                 },
             }}
         >

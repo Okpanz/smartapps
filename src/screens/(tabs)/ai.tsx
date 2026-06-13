@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -12,9 +12,12 @@ import {
     Image,
     Keyboard,
     Animated,
+    StatusBar,
+    ScrollView
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM_MARGIN } from '../../navigation/TabNavigator';
 import { sendMessageToGemini, ChatMessage } from '../../services/gemini';
 
@@ -29,6 +32,300 @@ interface Message {
     timestamp: Date;
     isTyping?: boolean;
 }
+
+// --- Markdown Styles ---
+const markdownStyles = {
+    body: {
+        fontSize: 16,
+        lineHeight: 24,
+        color: '#111827',
+    },
+    heading1: {
+        fontSize: 22,
+        fontWeight: 'bold' as const,
+        marginTop: 12,
+        marginBottom: 8,
+        color: '#111827',
+    },
+    heading2: {
+        fontSize: 18,
+        fontWeight: 'bold' as const,
+        marginTop: 10,
+        marginBottom: 6,
+        color: '#111827',
+    },
+    heading3: {
+        fontSize: 16,
+        fontWeight: 'bold' as const,
+        marginTop: 8,
+        marginBottom: 4,
+        color: '#111827',
+    },
+    strong: {
+        fontWeight: 'bold' as const,
+    },
+    em: {
+        fontStyle: 'italic' as const,
+    },
+    bullet_list: {
+        marginTop: 8,
+        marginBottom: 8,
+    },
+    bullet_list_icon: {
+        color: '#10B981',
+        marginRight: 8,
+    },
+    ordered_list: {
+        marginTop: 8,
+        marginBottom: 8,
+    },
+    link: {
+        color: '#157308',
+        textDecorationLine: 'underline' as const,
+    },
+    code_inline: {
+        backgroundColor: '#F3F4F6',
+        paddingHorizontal: 4,
+        borderRadius: 4,
+        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+        color: '#EF4444',
+    },
+    fence: {
+        backgroundColor: '#1F2937',
+        borderRadius: 8,
+        padding: 12,
+        marginTop: 8,
+        marginBottom: 8,
+        color: '#F9FAFB',
+        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    },
+    paragraph: {
+        marginBottom: 8,
+    },
+};
+
+// --- Markdown Renderer Component ---
+const MarkdownRenderer = ({ content, isUser = false }: { content: string; isUser?: boolean }) => {
+    // Create appropriate styles based on user/AI
+    const currentMarkdownStyles = isUser ? {
+        ...markdownStyles,
+        body: { ...markdownStyles.body, color: '#FFFFFF' },
+        strong: { ...markdownStyles.strong, color: '#FFFFFF' },
+        em: { ...markdownStyles.em, color: '#FFFFFF' },
+        link: { ...markdownStyles.link, color: '#D1FAE5' },
+        bullet_list_icon: { ...markdownStyles.bullet_list_icon, color: '#FFFFFF' },
+        heading1: { ...markdownStyles.heading1, color: '#FFFFFF' },
+        heading2: { ...markdownStyles.heading2, color: '#FFFFFF' },
+        heading3: { ...markdownStyles.heading3, color: '#FFFFFF' },
+        code_inline: {
+            ...markdownStyles.code_inline,
+            backgroundColor: 'rgba(255,255,255,0.2)',
+            color: '#FCD34D',
+        },
+    } : markdownStyles;
+
+    // Parse inline markdown (bold, italic, code, links)
+    const parseInline = (text: string): React.ReactNode => {
+        const elements: React.ReactNode[] = [];
+        let currentIndex = 0;
+        let lastIndex = 0;
+
+        // Regex patterns for inline markdown
+        const patterns = [
+            { regex: /\*\*(.+?)\*\*/g, type: 'strong' },
+            { regex: /__(.+?)__/g, type: 'strong' },
+            { regex: /\*(.+?)\*/g, type: 'em' },
+            { regex: /_(.+?)_/g, type: 'em' },
+            { regex: /`(.+?)`/g, type: 'code' },
+        ];
+
+        // Find all matches
+        const matches: { index: number; length: number; type: string; content: string }[] = [];
+        patterns.forEach(({ regex, type }) => {
+            let match;
+            while ((match = regex.exec(text)) !== null) {
+                matches.push({
+                    index: match.index,
+                    length: match[0].length,
+                    type,
+                    content: match[1],
+                });
+            }
+        });
+
+        // Sort matches by index
+        matches.sort((a, b) => a.index - b.index);
+
+        // Build elements
+        matches.forEach((match) => {
+            if (match.index > lastIndex) {
+                elements.push(
+                    <Text key={`text-${lastIndex}`} style={currentMarkdownStyles.body}>
+                        {text.substring(lastIndex, match.index)}
+                    </Text>
+                );
+            }
+
+            const style = match.type === 'strong'
+                ? currentMarkdownStyles.strong
+                : match.type === 'em'
+                ? currentMarkdownStyles.em
+                : currentMarkdownStyles.code_inline;
+
+            elements.push(
+                <Text key={`${match.type}-${match.index}`} style={style}>
+                    {match.content}
+                </Text>
+            );
+
+            lastIndex = match.index + match.length;
+        });
+
+        if (lastIndex < text.length) {
+            elements.push(
+                <Text key={`text-end-${lastIndex}`} style={currentMarkdownStyles.body}>
+                    {text.substring(lastIndex)}
+                </Text>
+            );
+        }
+
+        return elements;
+    };
+
+    const lines = content.split('\n');
+    const elements: React.ReactNode[] = [];
+    let i = 0;
+    let inCodeBlock = false;
+    let codeBlockContent: string[] = [];
+
+    while (i < lines.length) {
+        const line = lines[i];
+
+        // Handle code blocks
+        if (line.trim().startsWith('```')) {
+            if (inCodeBlock) {
+                // End of code block
+                elements.push(
+                    <View key={`code-${i}`} style={currentMarkdownStyles.fence}>
+                        <Text style={{ color: currentMarkdownStyles.fence.color, fontFamily: currentMarkdownStyles.fence.fontFamily }}>
+                            {codeBlockContent.join('\n')}
+                        </Text>
+                    </View>
+                );
+                codeBlockContent = [];
+                inCodeBlock = false;
+            } else {
+                // Start of code block
+                inCodeBlock = true;
+            }
+            i++;
+            continue;
+        }
+
+        if (inCodeBlock) {
+            codeBlockContent.push(line);
+            i++;
+            continue;
+        }
+
+        // Handle headings
+        const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
+        if (headingMatch) {
+            const level = headingMatch[1].length;
+            const style = level === 1
+                ? currentMarkdownStyles.heading1
+                : level === 2
+                ? currentMarkdownStyles.heading2
+                : currentMarkdownStyles.heading3;
+            elements.push(
+                <Text key={`heading-${i}`} style={style}>
+                    {parseInline(headingMatch[2])}
+                </Text>
+            );
+            i++;
+            continue;
+        }
+
+        // Handle bullet lists
+        const bulletMatch = line.match(/^(\s*)[-*]\s+(.+)/);
+        if (bulletMatch) {
+            const listItems: React.ReactNode[] = [];
+            let j = i;
+            while (j < lines.length) {
+                const bMatch = lines[j].match(/^(\s*)[-*]\s+(.+)/);
+                if (bMatch) {
+                    listItems.push(
+                        <View key={`list-item-${j}`} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
+                            <Text style={currentMarkdownStyles.bullet_list_icon}>•</Text>
+                            <Text style={{ flex: 1, ...currentMarkdownStyles.body }}>
+                                {parseInline(bMatch[2])}
+                            </Text>
+                        </View>
+                    );
+                    j++;
+                } else {
+                    break;
+                }
+            }
+            elements.push(
+                <View key={`bullet-list-${i}`} style={currentMarkdownStyles.bullet_list}>
+                    {listItems}
+                </View>
+            );
+            i = j;
+            continue;
+        }
+
+        // Handle numbered lists
+        const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.+)/);
+        if (orderedMatch) {
+            const listItems: React.ReactNode[] = [];
+            let j = i;
+            let number = parseInt(orderedMatch[2]);
+            while (j < lines.length) {
+                const oMatch = lines[j].match(/^(\s*)(\d+)\.\s+(.+)/);
+                if (oMatch) {
+                    listItems.push(
+                        <View key={`ordered-item-${j}`} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
+                            <Text style={{ ...currentMarkdownStyles.body, marginRight: 8, fontWeight: 'bold' }}>
+                                {number}.
+                            </Text>
+                            <Text style={{ flex: 1, ...currentMarkdownStyles.body }}>
+                                {parseInline(oMatch[3])}
+                            </Text>
+                        </View>
+                    );
+                    number++;
+                    j++;
+                } else {
+                    break;
+                }
+            }
+            elements.push(
+                <View key={`ordered-list-${i}`} style={currentMarkdownStyles.ordered_list}>
+                    {listItems}
+                </View>
+            );
+            i = j;
+            continue;
+        }
+
+        // Handle regular paragraphs
+        if (line.trim() !== '') {
+            elements.push(
+                <Text key={`para-${i}`} style={currentMarkdownStyles.paragraph}>
+                    {parseInline(line)}
+                </Text>
+            );
+        } else {
+            // Empty line - add small spacing
+            elements.push(<View key={`space-${i}`} style={{ height: 4 }} />);
+        }
+        i++;
+    }
+
+    return <View>{elements}</View>;
+};
 
 // ─── Keyboard-aware bottom offset hook ────────────────────────────────────────
 // Measures the real keyboard height and animates the input bar up/down.
@@ -83,6 +380,12 @@ const TypewriterText = ({ text, onComplete }: { text: string; onComplete?: () =>
 export default function AIScreen() {
     const insets = useSafeAreaInsets();
     const keyboardHeight = useKeyboardOffset();
+
+    useFocusEffect(
+        useCallback(() => {
+            StatusBar.setBarStyle('dark-content');
+        }, [])
+    );
 
     // The floating tab bar sits at bottom + margin. When keyboard is up,
     // we only need to offset by keyboard height (keyboard covers the tab bar).
@@ -176,9 +479,7 @@ export default function AIScreen() {
                         className="bg-[#157308] rounded-[20px] rounded-tr-sm px-5 py-3 max-w-[85%]"
                         style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2 }}
                     >
-                        <Text className="text-white text-[16px] leading-[24px] tracking-tight font-normal">
-                            {item.text}
-                        </Text>
+                        <MarkdownRenderer content={item.text} isUser={true} />
                     </View>
                 </View>
             );
@@ -197,12 +498,7 @@ export default function AIScreen() {
                     {item.isTyping ? (
                         <TypewriterText text={item.text} onComplete={() => handleTypingComplete(item.id)} />
                     ) : (
-                        <Text
-                            className="text-[16px] leading-[24px] text-gray-900 tracking-tight"
-                            style={{ fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto' }}
-                        >
-                            {item.text}
-                        </Text>
+                        <MarkdownRenderer content={item.text} isUser={false} />
                     )}
                 </View>
             </View>

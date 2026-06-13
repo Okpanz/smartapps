@@ -44,11 +44,11 @@ export default function EmployeeDetailsScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-background">
-            <EnhancedStepIndicator 
+            {/* <EnhancedStepIndicator 
                 currentStep={2} 
                 totalSteps={6} 
                 stepLabels={['Identify', 'Details', 'Upload', 'Prints', 'Face', 'Confirm']}
-            />
+            /> */}
 
             <Animated.ScrollView
                 contentContainerStyle={{ padding: isSmallDevice ? 16 : 24, paddingBottom: 40 }}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { COLORS } from '../constants/theme';
 
 import IdentifierScreen from '../screens/enrollment/identifier';
 import DetailsScreen from '../screens/enrollment/details';
@@ -15,11 +16,14 @@ export default function EnrollmentNavigator() {
         <Stack.Navigator
             screenOptions={{
                 headerStyle: {
-                    backgroundColor: '#fff',
+                    backgroundColor: COLORS.primary,
                 },
-                headerTintColor: '#000',
+                headerTintColor: COLORS.onPrimary,
+                headerTitleStyle: {
+                    color: COLORS.onPrimary,
+                },
                 contentStyle: {
-                    backgroundColor: '#ffffff',
+                    backgroundColor: COLORS.background,
                 },
             }}
         >

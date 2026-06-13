@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     container: {
         paddingHorizontal: isSmallDevice ? 16 : 24,
         paddingBottom: 16,
-        backgroundColor: 'white',
+        backgroundColor: 'transparent',
         paddingTop: 16,
     },
     header: {

@@ -17,6 +17,7 @@ import { CustomAlert, AlertType } from '../../components/ui/CustomAlert';
 import { externalScanner, UsbDevice } from '../../services/externalScanner';
 import { isSmallDevice } from '../../utils/responsive';
 import { copyToDocumentDir } from '../../services/enrollment';
+import { COLORS } from '../../constants/theme';
 
 export default function FingerprintScreen() {
     // Local definition to avoid import issues and linter errors
@@ -435,7 +436,7 @@ export default function FingerprintScreen() {
                     >
                         {scannerStatus === 'CONNECTING' || scannerStatus === 'INITIALIZING' || isSearching ? (
                             <View className="items-center">
-                                <ActivityIndicator size="large" color="#007AFF" />
+                                <ActivityIndicator size="large" color={COLORS.primary} />
                                 <Text className="text-gray-400 mt-2 text-xs">
                                     {isSearching ? "Searching..." : 
                                      scannerStatus === 'INITIALIZING' ? "Initializing..." : 
@@ -484,7 +485,7 @@ export default function FingerprintScreen() {
                             <Ionicons 
                                 name={skippedFingerprint ? "alert-circle-outline" : "checkmark-circle"} 
                                 size={80} 
-                                color={skippedFingerprint ? "#F97316" : "#007AFF"} 
+                                color={skippedFingerprint ? "#F97316" : COLORS.primary} 
                             />
                             <Text className={`mt-4 font-semibold text-lg ${skippedFingerprint ? "text-orange-500" : "text-primary"}`}>
                                 {skippedFingerprint ? "Capture Skipped" : "Capture Complete"}
@@ -508,7 +509,7 @@ export default function FingerprintScreen() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <ActivityIndicator size="large" color="#007AFF" />
+                                                    <ActivityIndicator size="large" color={COLORS.primary} />
                                                     <Text className="text-white font-bold text-sm mt-2">Scanning...</Text>
                                                 </>
                                             )}
@@ -526,13 +527,13 @@ export default function FingerprintScreen() {
                                 <>
                                     {isInitializing ? (
                                         <>
-                                            <ActivityIndicator size="large" color="#007AFF" className="mb-4" />
+                                            <ActivityIndicator size="large" color={COLORS.primary} className="mb-4" />
                                             <Text className="text-primary font-bold text-xl">Initializing...</Text>
                                             <Text className="text-gray-400 text-xs mt-1">Please wait</Text>
                                         </>
                                     ) : (
                                         <>
-                                            <ActivityIndicator size="large" color="#007AFF" className="mb-4" />
+                                            <ActivityIndicator size="large" color={COLORS.primary} className="mb-4" />
                                             <Text className="text-primary font-bold text-xl">Ready</Text>
                                             <Text className="text-gray-400 text-xs mt-1">
                                                 Place {currentCount === 0 ? 'LEFT' : 'RIGHT'} Thumb on Scanner
@@ -599,8 +600,8 @@ export default function FingerprintScreen() {
                                             className="flex-row items-center p-4 border-b border-gray-100 active:bg-gray-50"
                                             onPress={() => connectToDevice(item.deviceId)}
                                         >
-                                            <View className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center mr-3">
-                                                <Ionicons name="usb-outline" size={20} color="#007AFF" />
+                                            <View className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center mr-3">
+                                                <Ionicons name="usb-outline" size={20} color={COLORS.primary} />
                                             </View>
                                             <View className="flex-1">
                                                 <Text className="font-medium text-gray-900">{item.product || item.deviceName}</Text>

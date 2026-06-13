@@ -1,10 +1,10 @@
-import { View, Text, KeyboardAvoidingView, Platform, ScrollView, Animated } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView, Animated, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -95,6 +95,12 @@ export default function IdentifierScreen() {
             useNativeDriver: true,
         }).start();
     }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            StatusBar.setBarStyle('light-content');
+        }, [])
+    );
 
     const onSubmit = async (data: IdentifierForm) => {
         setLoading(true);

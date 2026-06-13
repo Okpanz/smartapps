@@ -1,5 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { COLORS } from '../constants/theme';
 
 import VerificationIdentifierScreen from '../screens/verification/VerificationIdentifier';
 import VerificationDetailsScreen from '../screens/verification/VerificationDetails';
@@ -12,11 +13,14 @@ export default function DocumentVerificationNavigator() {
         <Stack.Navigator
             screenOptions={{
                 headerStyle: {
-                    backgroundColor: '#fff',
+                    backgroundColor: COLORS.primary,
                 },
-                headerTintColor: '#000',
+                headerTintColor: COLORS.onPrimary,
+                headerTitleStyle: {
+                    color: COLORS.onPrimary,
+                },
                 contentStyle: {
-                    backgroundColor: '#ffffff',
+                    backgroundColor: COLORS.background,
                 },
             }}
         >

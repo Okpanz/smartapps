@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { COLORS } from './constants/theme';
 // @ts-ignore – CSS side-effect import for global styles
 import './global.css';
 
@@ -93,7 +94,10 @@ export default function App() {
         <ErrorBoundary>
           <NetworkIndicator />
           <NavigationContainer>
-            <StatusBar barStyle="dark-content" />
+            <StatusBar 
+              barStyle="light-content" 
+              backgroundColor={COLORS.primary}
+            />
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               <Stack.Screen name="Landing" component={LandingScreen} />
               <Stack.Screen name="Tabs" component={TabNavigator} />

@@ -36,13 +36,13 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error: any) => Promise.reject(error)
 );
 
 // ─── Response interceptor ─────────────────────────────────────────────────────
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
+  (response: any) => response,
+  async (error: { config: any; response: { status: number; }; }) => {
     const config: any = error.config;
 
     if (error.response) {

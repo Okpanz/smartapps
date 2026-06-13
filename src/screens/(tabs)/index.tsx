@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTabBarBottomInset } from '../../navigation/TabNavigator';
@@ -175,6 +175,7 @@ export default function DashboardScreen() {
 
     useFocusEffect(
         useCallback(() => {
+            StatusBar.setBarStyle('dark-content');
             fetchActivities();
             fetchStats();
         }, [])

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, TextInput, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, TextInput, Modal, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTabBarBottomInset } from '../../navigation/TabNavigator';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -93,6 +93,7 @@ export default function HistoryScreen() {
 
     useFocusEffect(
         useCallback(() => {
+            StatusBar.setBarStyle('dark-content');
             fetchActivities();
         }, [appliedFilters])
     );

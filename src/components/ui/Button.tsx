@@ -1,5 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, Text, ActivityIndicator } from 'react-native';
+import { COLORS } from '../../constants/theme';
 
 interface ButtonProps extends React.ComponentProps<typeof TouchableOpacity> {
     title: string;
@@ -48,7 +49,7 @@ export const Button = ({ title, loading, variant = 'filled', style, disabled, ic
             {...props}
         >
             {loading ? (
-                <ActivityIndicator color={variant === 'filled' ? 'white' : '#02542D'} />
+                <ActivityIndicator color={variant === 'filled' ? COLORS.onPrimary : COLORS.primary} />
             ) : (
                 <>
                     {icon && <Text className="mr-2">{icon}</Text>}
