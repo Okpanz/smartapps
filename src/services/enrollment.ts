@@ -554,11 +554,25 @@ export const syncPendingEnrollments = async (
 
     const remaining = await databaseService.getPendingEnrollmentsCount();
     useAuthStore.getState().setPendingUploadsCount(remaining);
+    
+    // Check if there are still queued jobs to process
+    const allPending = await databaseService.getPendingEnrollments();
+    const hasQueuedJobs = allPending.some(row => row.status === 'queued');
 
     if (failCount === 0 && remaining === 0) {
       useAuthStore.getState().setUploadStatus('success');
       notificationService.notifySyncStatus('completed', 'All pending enrollments processed.');
       setTimeout(() => useAuthStore.getState().setUploadStatus('idle'), 3000);
+    } else if (hasQueuedJobs) {
+      // There are still queued jobs - keep checking
+      useAuthStore.getState().setUploadStatus('syncing');
+      
+      // Schedule next check sooner for queued jobs to monitor their status
+      if (syncRetryTimeout) clearTimeout(syncRetryTimeout);
+      syncRetryTimeout = setTimeout(() => {
+        syncRetryTimeout = null;
+        syncPendingEnrollments();
+      }, 5000); // Check every 5 seconds for queued jobs
     } else {
       useAuthStore.getState().setUploadStatus(failCount > 0 ? 'error' : 'idle');
       if (failCount > 0) {
@@ -587,21 +601,34 @@ export const syncPendingEnrollments = async (
 
 /**
  * Re-queues a single archived verification into the pending_enrollments table
- * so the normal sync pipeline uploads it. Idempotent: the queue id is derived
- * from the verificationId, so restoring the same backup twice is a no-op.
+ * so the normal sync pipeline uploads it.
  *
- * @returns true if a NEW queue entry was created, false if it was already queued.
+ * @param force If true, removes any existing queue entry and re-queues
+ * @returns { created: boolean; alreadyQueued: boolean; alreadySynced: boolean } Status of the restore
  */
 export const restoreSingleFromBackup = async (
   date: string,
-  verificationId: string
-): Promise<boolean> => {
+  verificationId: string,
+  force: boolean = false
+): Promise<{ created: boolean; alreadyQueued: boolean; alreadySynced: boolean }> => {
   const record = await verificationBackup.readVerification(verificationId, date);
   if (!record) throw new Error('Backup record not found');
 
+  // Check if already synced
+  if (record.syncStatus === 'synced') {
+    return { created: false, alreadyQueued: false, alreadySynced: true };
+  }
+
   const id = `restore_${verificationId}`;
-  if (await databaseService.hasPendingEnrollment(id)) {
-    return false; // already queued — nothing to do
+  const exists = await databaseService.hasPendingEnrollment(id);
+
+  if (exists && !force) {
+    return { created: false, alreadyQueued: true, alreadySynced: false };
+  }
+
+  // If force is true or doesn't exist, (re-)create the queue entry
+  if (exists && force) {
+    await databaseService.removePendingEnrollment(id);
   }
 
   const payload = verificationBackup.buildRestorePayload(record, date);
@@ -609,18 +636,20 @@ export const restoreSingleFromBackup = async (
 
   const count = await databaseService.getPendingEnrollmentsCount();
   useAuthStore.getState().setPendingUploadsCount(count);
-  logger.debug(`[Enrollment] Restored ${verificationId} into upload queue`);
+  logger.debug(`[Enrollment] Restored ${verificationId} into upload queue (force=${force})`);
 
   // Forced sync — a restore is a deliberate action, so reset any backoff
   void syncPendingEnrollments({ force: true });
-  return true;
+  return { created: true, alreadyQueued: exists, alreadySynced: false };
 };
 
 /**
  * Scans the whole archive and re-queues every verification that is not marked
  * synced. Used for disaster recovery when the pending queue was lost.
+ *
+ * @param force If true, removes existing queue entries and re-queues
  */
-export const restoreUnsyncedFromBackup = async (): Promise<{
+export const restoreUnsyncedFromBackup = async (force: boolean = false): Promise<{
   restored: number;
   alreadyQueued: number;
   skippedSynced: number;
@@ -638,10 +667,17 @@ export const restoreUnsyncedFromBackup = async (): Promise<{
         continue;
       }
       const id = `restore_${record.verificationId}`;
-      if (await databaseService.hasPendingEnrollment(id)) {
+      const exists = await databaseService.hasPendingEnrollment(id);
+      
+      if (exists && !force) {
         alreadyQueued++;
         continue;
       }
+      
+      if (exists && force) {
+        await databaseService.removePendingEnrollment(id);
+      }
+      
       const payload = verificationBackup.buildRestorePayload(record, date);
       await databaseService.savePendingEnrollment(id, payload, Date.now());
       restored++;
@@ -651,7 +687,7 @@ export const restoreUnsyncedFromBackup = async (): Promise<{
   const count = await databaseService.getPendingEnrollmentsCount();
   useAuthStore.getState().setPendingUploadsCount(count);
   logger.debug(
-    `[Enrollment] Restore complete — new:${restored} queued:${alreadyQueued} synced:${skippedSynced}`
+    `[Enrollment] Restore complete — new:${restored} queued:${alreadyQueued} synced:${skippedSynced} force=${force}`
   );
 
   if (restored > 0) void syncPendingEnrollments({ force: true });

@@ -104,7 +104,8 @@ export interface ArchiveSummary {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const BACKUP_ROOT = `${RNFS.DocumentDirectoryPath}/verifications`;
+// Use Download directory for accessibility on Android, fallback to DocumentDirectory
+const BACKUP_ROOT = `${RNFS.DownloadDirectoryPath || RNFS.DocumentDirectoryPath}/SmartVerification_Backups`;
 const RECORD_FILE = 'record.json';
 const DATE_FOLDER_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -283,10 +284,10 @@ class VerificationBackupService {
   }
 
   /**
-   * Flags the most recent backup for an employee as synced. Called after a
+   * Flags all pending backups for an employee as synced. Called after a
    * successful upload (online or queued-then-synced). Never throws.
    *
-   * @param employeeId The employee whose latest pending backup to update.
+   * @param employeeId The employee whose pending backups to update.
    */
   async markSynced(employeeId: string): Promise<void> {
     try {
@@ -294,8 +295,10 @@ class VerificationBackupService {
       if (!safeEmp) return;
 
       // Search date folders newest-first for this employee's verification
-      // folders (named "<safeEmp>_<ts>"); the newest sorts last by timestamp.
+      // folders (named "<safeEmp>_<ts>").
       const dates = await this.listBackupDates();
+      let updatedCount = 0;
+      
       for (const date of dates) {
         const dayDir = `${BACKUP_ROOT}/${date}`;
         let entries: RNFS.ReadDirItem[];
@@ -318,7 +321,7 @@ class VerificationBackupService {
             const rec = JSON.parse(
               await RNFS.readFile(recordPath, 'utf8')
             ) as VerificationBackupRecord;
-            if (rec.syncStatus === 'synced') return; // already up to date
+            if (rec.syncStatus === 'synced') continue; // already up to date
             rec.syncStatus = 'synced';
             rec.syncedAt = new Date().toISOString();
             rec.lastModified = rec.syncedAt;
@@ -328,11 +331,15 @@ class VerificationBackupService {
               'utf8'
             );
             logger.debug('[Backup] Marked synced:', recordPath);
-            return;
+            updatedCount++;
           } catch (e) {
             logger.warn('[Backup] markSynced read/write skipped:', e);
           }
         }
+      }
+      
+      if (updatedCount > 0) {
+        logger.debug(`[Backup] Marked ${updatedCount} records synced for employee: ${employeeId}`);
       }
     } catch (err) {
       logger.warn('[Backup] markSynced non-fatal:', err);
@@ -453,6 +460,36 @@ class VerificationBackupService {
   async exportDate(date: string): Promise<string> {
     const records = await this.listVerificationsForDate(date);
     return JSON.stringify({ date, count: records.length, records }, null, 2);
+  }
+
+  /** Returns all unsynced records from all dates. */
+  async getAllUnsyncedRecords(): Promise<VerificationBackupRecord[]> {
+    const unsyncedRecords: VerificationBackupRecord[] = [];
+    try {
+      const dates = await this.listBackupDates();
+      for (const date of dates) {
+        const recs = await this.listVerificationsForDate(date);
+        const unsyncedOnDate = recs.filter((r) => r.syncStatus === 'pending');
+        unsyncedRecords.push(...unsyncedOnDate);
+      }
+    } catch (err) {
+      logger.warn('[Backup] getAllUnsyncedRecords non-fatal:', err);
+    }
+    return unsyncedRecords;
+  }
+
+  /** Exports all unsynced data as a single JSON string. */
+  async exportUnsynced(): Promise<string> {
+    const unsynced = await this.getAllUnsyncedRecords();
+    return JSON.stringify({
+      exportDate: new Date().toISOString(),
+      count: unsynced.length,
+      records: unsynced
+    }, null, 2);
+  }
+
+  getBackupRootPath(): string {
+    return BACKUP_ROOT;
   }
 }
 

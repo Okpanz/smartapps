@@ -83,23 +83,51 @@ export default function BackupRestoreScreen() {
     setSummary(s);
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      loadSummary().finally(() => setLoading(false));
-    }, [loadSummary])
-  );
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
+  const refreshData = useCallback(async () => {
     await loadSummary();
     // Refresh any expanded day too
     if (expandedDate) {
       const recs = await verificationBackup.listVerificationsForDate(expandedDate);
       setRecordsByDate((prev) => ({ ...prev, [expandedDate]: recs }));
     }
-    setRefreshing(false);
   }, [loadSummary, expandedDate]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      let refreshInterval: NodeJS.Timeout | null = null;
+
+      const load = async () => {
+        if (!isActive) return;
+        setLoading(true);
+        await refreshData();
+        setLoading(false);
+      };
+
+      load();
+
+      // Periodically refresh every 3 seconds while screen is focused
+      // to catch sync status updates
+      refreshInterval = setInterval(() => {
+        if (isActive) {
+          refreshData();
+        }
+      }, 3000);
+
+      return () => {
+        isActive = false;
+        if (refreshInterval) {
+          clearInterval(refreshInterval);
+        }
+      };
+    }, [refreshData])
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
+  }, [refreshData]);
 
   const toggleDate = async (date: string) => {
     if (expandedDate === date) {
@@ -113,50 +141,92 @@ export default function BackupRestoreScreen() {
     }
   };
 
-  const handleRestoreAll = () => {
+  const handleRestoreAll = (force: boolean = false) => {
     if (!summary || summary.pending === 0) {
       showAlert('Nothing to Restore', 'All archived verifications are already synced.', 'info');
       return;
     }
-    showAlert(
-      'Restore Unsynced Records',
-      `Re-queue ${summary.pending} unsynced verification${summary.pending === 1 ? '' : 's'} for upload? They will sync automatically when online.`,
-      'warning',
-      async () => {
-        setRestoringAll(true);
-        try {
-          const res = await restoreUnsyncedFromBackup();
-          await loadSummary();
+    
+    const doRestore = async () => {
+      setRestoringAll(true);
+      try {
+        const res = await restoreUnsyncedFromBackup(force);
+        await refreshData();
+        
+        let message = `Re-queued ${res.restored} record${res.restored === 1 ? '' : 's'}.`;
+        if (res.alreadyQueued && !force) {
+          // If some were already queued and we didn't force, offer to force re-queue
+          message += ` ${res.alreadyQueued} already in queue.`;
           showAlert(
             'Restore Complete',
-            `Re-queued ${res.restored} record${res.restored === 1 ? '' : 's'}.` +
-              (res.alreadyQueued ? ` ${res.alreadyQueued} already in queue.` : ''),
+            message + ' Would you like to re-queue all unsynced records?',
+            'info',
+            () => handleRestoreAll(true),
+            { showCancel: true, confirmText: 'Re-queue All', cancelText: 'Done' }
+          );
+        } else {
+          if (res.alreadyQueued) {
+            message += ` ${res.alreadyQueued} re-queued.`;
+          }
+          if (res.skippedSynced) {
+            message += ` ${res.skippedSynced} already synced.`;
+          }
+          showAlert(
+            force ? 'Re-queue Complete' : 'Restore Complete',
+            message,
             'success'
           );
-        } catch (e: any) {
-          showAlert('Restore Failed', e?.message || 'Could not restore records.', 'error');
-        } finally {
-          setRestoringAll(false);
         }
-      },
-      { showCancel: true, confirmText: 'Restore', cancelText: 'Cancel' }
-    );
+      } catch (e: any) {
+        showAlert('Restore Failed', e?.message || 'Could not restore records.', 'error');
+      } finally {
+        setRestoringAll(false);
+      }
+    };
+
+    if (force) {
+      doRestore();
+    } else {
+      showAlert(
+        'Restore Unsynced Records',
+        `Re-queue ${summary.pending} unsynced verification${summary.pending === 1 ? '' : 's'} for upload? They will sync automatically when online.`,
+        'warning',
+        doRestore,
+        { showCancel: true, confirmText: 'Restore', cancelText: 'Cancel' }
+      );
+    }
   };
 
-  const handleRestoreOne = async (date: string, rec: VerificationBackupRecord) => {
+  const handleRestoreOne = async (date: string, rec: VerificationBackupRecord, force: boolean = false) => {
     setRestoringId(rec.verificationId);
     try {
-      const created = await restoreSingleFromBackup(date, rec.verificationId);
-      await loadSummary();
-      const recs = await verificationBackup.listVerificationsForDate(date);
-      setRecordsByDate((prev) => ({ ...prev, [date]: recs }));
-      showAlert(
-        created ? 'Restored' : 'Already Queued',
-        created
-          ? 'Verification re-queued for upload.'
-          : 'This verification is already in the upload queue.',
-        created ? 'success' : 'info'
-      );
+      const result = await restoreSingleFromBackup(date, rec.verificationId, force);
+      await refreshData();
+      
+      if (result.alreadySynced) {
+        showAlert(
+          'Already Synced',
+          'This verification has already been synced successfully.',
+          'info'
+        );
+      } else if (result.created) {
+        showAlert(
+          force ? 'Re-queued' : 'Restored',
+          force
+            ? 'Verification has been re-queued for upload.'
+            : 'Verification re-queued for upload.',
+          'success'
+        );
+      } else if (result.alreadyQueued) {
+        // Ask user if they want to force re-queue
+        showAlert(
+          'Already in Queue',
+          'This verification is already in the upload queue. Would you like to re-queue it?',
+          'warning',
+          () => handleRestoreOne(date, rec, true),
+          { showCancel: true, confirmText: 'Re-queue', cancelText: 'Cancel' }
+        );
+      }
     } catch (e: any) {
       showAlert('Restore Failed', e?.message || 'Could not restore this record.', 'error');
     } finally {
@@ -170,6 +240,16 @@ export default function BackupRestoreScreen() {
       await Share.share({ title: `verifications_${date}.json`, message: json });
     } catch (e: any) {
       showAlert('Export Failed', e?.message || 'Could not export records.', 'error');
+    }
+  };
+
+  const handleExportUnsynced = async () => {
+    try {
+      const json = await verificationBackup.exportUnsynced();
+      const fileName = `unsynced_verifications_${format(new Date(), 'yyyyMMdd_HHmmss')}.json`;
+      await Share.share({ title: fileName, message: json });
+    } catch (e: any) {
+      showAlert('Export Failed', e?.message || 'Could not export unsynced records.', 'error');
     }
   };
 
@@ -200,16 +280,22 @@ export default function BackupRestoreScreen() {
           {/* Summary */}
           <View className="bg-white rounded-2xl border border-gray-100 p-5 mb-5">
             <Text className="text-xs font-semibold text-gray-400 mb-4 uppercase">Archive Summary</Text>
-            <View className="flex-row justify-between">
+            <View className="flex-row justify-between mb-4">
               <Stat label="Archived" value={summary?.totalRecords ?? 0} color="#111827" />
               <Stat label="Synced" value={summary?.synced ?? 0} color="#10B981" />
               <Stat label="Unsynced" value={summary?.pending ?? 0} color="#F97316" />
               <Stat label="Days" value={summary?.totalDates ?? 0} color="#2563EB" />
             </View>
+            <View className="bg-gray-50 rounded-xl p-3">
+              <Text className="text-xs text-gray-500 mb-1">Backup Location</Text>
+              <Text className="text-xs font-mono text-gray-600" numberOfLines={2}>
+                {verificationBackup.getBackupRootPath()}
+              </Text>
+            </View>
           </View>
 
           {/* Restore all unsynced */}
-          <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-6">
+          <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
             <View className="flex-row items-center mb-4">
               <View className="w-10 h-10 rounded-full bg-orange-50 items-center justify-center mr-3">
                 <Ionicons name="cloud-upload-outline" size={20} color="#F97316" />
@@ -221,23 +307,38 @@ export default function BackupRestoreScreen() {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity
-              onPress={handleRestoreAll}
-              disabled={restoringAll || (summary?.pending ?? 0) === 0}
-              className={`rounded-xl py-3 items-center ${
-                (summary?.pending ?? 0) === 0 ? 'bg-gray-100' : 'bg-orange-500'
-              }`}
-            >
-              {restoringAll ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className={`font-bold ${(summary?.pending ?? 0) === 0 ? 'text-gray-400' : 'text-white'}`}>
-                  {(summary?.pending ?? 0) === 0
-                    ? 'Nothing to Restore'
-                    : `Restore ${summary?.pending} Unsynced`}
-                </Text>
-              )}
-            </TouchableOpacity>
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={handleRestoreAll}
+                disabled={restoringAll || (summary?.pending ?? 0) === 0}
+                className={`flex-1 rounded-xl py-3 items-center ${
+                  (summary?.pending ?? 0) === 0 ? 'bg-gray-100' : 'bg-orange-500'
+                }`}
+              >
+                {restoringAll ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text className={`font-bold ${(summary?.pending ?? 0) === 0 ? 'text-gray-400' : 'text-white'}`}>
+                    {(summary?.pending ?? 0) === 0
+                      ? 'Nothing to Restore'
+                      : `Restore ${summary?.pending} Unsynced`}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleExportUnsynced}
+                disabled={(summary?.pending ?? 0) === 0}
+                className={`px-4 rounded-xl py-3 items-center justify-center border-2 ${
+                  (summary?.pending ?? 0) === 0 ? 'border-gray-200' : 'border-orange-500'
+                }`}
+              >
+                <Ionicons
+                  name="download-outline"
+                  size={20}
+                  color={(summary?.pending ?? 0) === 0 ? '#9CA3AF' : '#F97316'}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Browse by date */}

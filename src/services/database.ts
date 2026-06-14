@@ -408,7 +408,7 @@ class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
     const [results] = await this.db.executeSql(
       `SELECT * FROM pending_enrollments
-       WHERE status IN ('pending', 'failed')
+       WHERE status IN ('pending', 'failed', 'queued')
        ORDER BY created_at ASC;`
     );
     const rows: PendingEnrollmentRow[] = [];
@@ -433,7 +433,7 @@ class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
     const [results] = await this.db.executeSql(
       `SELECT COUNT(*) as count FROM pending_enrollments
-       WHERE status IN ('pending', 'failed');`
+       WHERE status IN ('pending', 'failed', 'queued');`
     );
     return results.rows.item(0).count;
   }
@@ -536,14 +536,16 @@ class DatabaseService {
     
     const [results] = await this.db.executeSql(
       `SELECT * FROM pending_enrollments
-       WHERE status IN ('pending', 'failed')
-       AND (next_retry_at IS NULL OR next_retry_at <= ?)
+       WHERE (status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= ?))
+       OR status = 'queued'
        ORDER BY
-         -- Priority 1: small payloads first
+         -- Priority 1: queued first (already have job IDs)
+         CASE WHEN status = 'queued' THEN 0 ELSE 1 END ASC,
+         -- Priority 2: small payloads first
          CASE WHEN payload_size_bytes < 5000000 THEN 0 ELSE 1 END ASC,
-         -- Priority 2: oldest first
+         -- Priority 3: oldest first
          created_at ASC,
-         -- Priority 3: failed retries last
+         -- Priority 4: failed retries last
          retry_count ASC;`,
       [now]
     );
@@ -558,6 +560,15 @@ class DatabaseService {
   async getEarliestNextRetry(): Promise<number | null> {
     if (!this.db) await this.init();
     if (!this.db) throw new Error('Database not initialized');
+    
+    // Check if there are any queued jobs first
+    const [queuedCheck] = await this.db.executeSql(
+      `SELECT 1 FROM pending_enrollments WHERE status = 'queued' LIMIT 1;`
+    );
+    if (queuedCheck.rows.length > 0) {
+      // If there are queued jobs, check again soon (5 seconds from now)
+      return Date.now() + 5000;
+    }
     
     const [results] = await this.db.executeSql(
       `SELECT MIN(next_retry_at) as min_next FROM pending_enrollments
