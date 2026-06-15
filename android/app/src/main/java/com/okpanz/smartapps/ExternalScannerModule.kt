@@ -1,4 +1,4 @@
-package com.okpanz.smartapps
+package com.okpanz.smartappsv2
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -23,7 +23,7 @@ import java.io.ByteArrayOutputStream
 
 class ExternalScannerModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
-    private val ACTION_USB_PERMISSION = "com.okpanz.smartapps.USB_PERMISSION"
+    private val ACTION_USB_PERMISSION = "com.okpanz.smartappsv2.USB_PERMISSION"
     private val usbManager: UsbManager = reactContext.getSystemService(Context.USB_SERVICE) as UsbManager
     private var pendingIntent: PendingIntent? = null
     

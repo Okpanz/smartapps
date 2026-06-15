@@ -28,7 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>smartverify</string>
-          <string>com.okpanz.smartapps</string>
+          <string>com.okpanz.smartappsv2</string>
         </array>
       </dict>
     </array>

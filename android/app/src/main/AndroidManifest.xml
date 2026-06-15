@@ -45,7 +45,7 @@
     </activity>
     <provider
         android:name="androidx.core.content.FileProvider"
-        android:authorities="com.okpanz.smartapps.provider"
+        android:authorities="com.okpanz.smartappsv2.provider"
         android:exported="false"
         android:grantUriPermissions="true">
         <meta-data

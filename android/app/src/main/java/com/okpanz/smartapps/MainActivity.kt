@@ -1,4 +1,4 @@
-package com.okpanz.smartapps
+package com.okpanz.smartappsv2
 
 import android.os.Build
 import android.os.Bundle

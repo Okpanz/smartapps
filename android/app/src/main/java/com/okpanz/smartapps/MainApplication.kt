@@ -1,5 +1,5 @@
 @file:Suppress("DEPRECATION")
-package com.okpanz.smartapps
+package com.okpanz.smartappsv2
 
 import android.app.Application
 import android.content.res.Configuration
@@ -15,7 +15,7 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 
-import com.okpanz.smartapps.BuildConfig
+import com.okpanz.smartappsv2.BuildConfig
 
 class MainApplication : Application(), ReactApplication {
 

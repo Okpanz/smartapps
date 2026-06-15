@@ -1,4 +1,4 @@
-package com.okpanz.smartapps
+package com.okpanz.smartappsv2
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
