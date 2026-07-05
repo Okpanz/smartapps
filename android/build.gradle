@@ -7,7 +7,7 @@ buildscript {
         compileSdkVersion = 36
         targetSdkVersion = 34
         ndkVersion = "27.1.12297006"
-        kotlinVersion = "2.0.21"
+        kotlinVersion = "2.1.20"
     }
 
     repositories {
@@ -16,7 +16,7 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.7.2")
+        classpath("com.android.tools.build:gradle:8.11.0")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
@@ -27,29 +27,6 @@ allprojects {
         google()
         mavenCentral()
         maven { url "https://www.jitpack.io" }
-    }
-}
-
-subprojects {
-    afterEvaluate { project ->
-        if (project.plugins.hasPlugin("com.android.application") ||
-            project.plugins.hasPlugin("com.android.library")) {
-
-            project.android {
-
-                if (!hasProperty("namespace") || namespace == null) {
-                    namespace = project.group.toString()
-                }
-
-                compileSdkVersion rootProject.ext.compileSdkVersion
-                ndkVersion rootProject.ext.ndkVersion
-
-                defaultConfig {
-                    minSdkVersion rootProject.ext.minSdkVersion
-                    targetSdkVersion rootProject.ext.targetSdkVersion
-                }
-            }
-        }
     }
 }
 

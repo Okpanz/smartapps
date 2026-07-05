@@ -1,0 +1,22 @@
+diff --git a/node_modules/react-native-splash-screen/android/build.gradle b/node_modules/react-native-splash-screen/android/build.gradle
+index baef1a9..7c53661 100644
+--- a/node_modules/react-native-splash-screen/android/build.gradle
++++ b/node_modules/react-native-splash-screen/android/build.gradle
+@@ -10,6 +10,7 @@ def DEFAULT_TARGET_SDK_VERSION              = 26
+ def DEFAULT_SUPPORT_LIB_VERSION             = "26.1.0"
+ 
+ android {
++    namespace "org.devio.rn.splashscreen"
+     compileSdkVersion rootProject.hasProperty('compileSdkVersion') ? rootProject.compileSdkVersion : DEFAULT_COMPILE_SDK_VERSION
+     buildToolsVersion rootProject.hasProperty('buildToolsVersion') ? rootProject.buildToolsVersion : DEFAULT_BUILD_TOOLS_VERSION
+ 
+diff --git a/node_modules/react-native-splash-screen/android/src/main/AndroidManifest.xml b/node_modules/react-native-splash-screen/android/src/main/AndroidManifest.xml
+index be5bfe9..0a0938a 100644
+--- a/node_modules/react-native-splash-screen/android/src/main/AndroidManifest.xml
++++ b/node_modules/react-native-splash-screen/android/src/main/AndroidManifest.xml
+@@ -1,4 +1,3 @@
+-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+-    package="org.devio.rn.splashscreen">
++<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ 
+ </manifest>
