@@ -145,9 +145,17 @@ export default function DocumentUploadScreen() {
 
         setIsUploading(true);
         try {
+            const documentType = data.type === 'OTHER' ? data.otherLabel || 'Other' : data.type;
+            
+            // Check if document of this type already exists and remove it first
+            const existingDoc = documents.find(doc => doc.type === documentType);
+            if (existingDoc) {
+                removeDocument(existingDoc.id);
+            }
+            
             const newDoc: Document = {
                 id: Math.random().toString(36).substring(7),
-                type: data.type === 'OTHER' ? data.otherLabel || 'Other' : data.type,
+                type: documentType,
                 uri: selectedFile.uri,
                 status: 'PENDING',
                 uploadedBy: 'user-001', // Mock user
@@ -155,7 +163,7 @@ export default function DocumentUploadScreen() {
             };
 
             addDocument(newDoc);
-            showAlert('Success', 'Document added successfully', 'success');
+            showAlert('Success', existingDoc ? 'Document replaced successfully' : 'Document added successfully', 'success');
             setSelectedFile(null);
             setValue('type', '');
             setValue('otherLabel', '');
@@ -240,21 +248,24 @@ export default function DocumentUploadScreen() {
                                 return (
                                     <TouchableOpacity
                                         key={type.type}
-                                        onPress={() => !isUploaded && setValue('type', type.type)}
-                                        disabled={isUploaded}
+                                        onPress={() => setValue('type', type.type)}
                                         className={`
                                             flex-row items-center px-4 py-2.5 rounded-full border
                                             ${selectedType === type.type
                                                 ? 'bg-primary border-primary'
                                                 : isUploaded
-                                                    ? 'bg-gray-100 border-gray-200 opacity-50'
+                                                    ? 'bg-orange-50 border-orange-200'
                                                     : 'bg-white border-gray-200'}
                                         `}
                                     >
                                         <Ionicons
-                                            name={isUploaded ? 'checkmark-circle' : (type.icon as any) || 'document-text-outline'}
+                                            name={selectedType === type.type 
+                                                ? 'checkmark-circle' 
+                                                : isUploaded 
+                                                    ? 'refresh-circle-outline' 
+                                                    : (type.icon as any) || 'document-text-outline'}
                                             size={18}
-                                            color={selectedType === type.type ? 'white' : isUploaded ? '#10B981' : '#6B7280'}
+                                            color={selectedType === type.type ? 'white' : isUploaded ? '#F97316' : '#6B7280'}
                                         />
                                         <Text className={`ml-2 text-sm font-medium ${selectedType === type.type ? 'text-white' : isUploaded ? 'text-gray-400' : 'text-gray-600'}`}>
                                             {type.label}

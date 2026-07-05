@@ -163,14 +163,17 @@ export const verifyIdentifier = async (identifier: string): Promise<Employee> =>
                 const currentUser = useAuthStore.getState().user;
                 // Check for service mismatch for adhock staff
                 if (currentUser?.role === 'adhock') {
-                    const employeeServiceId = String(serviceId || '');
-                    const userServiceId = String(currentUser.service_id || '');
+                    console.log(currentUser)
+                    const employeeServiceId = String(serviceId || '').trim();
+                    const userServiceId = String(currentUser.service_id || '').trim();
 
-                    console.log(`[Verify] Checking Service Match: Employee(${employeeServiceId}) vs User(${userServiceId})`);
+                    console.log(`[Verify] Checking Service Match: Employee(${JSON.stringify(employeeServiceId)}) vs User(${JSON.stringify(userServiceId)})`);
 
                     if (employeeServiceId !== userServiceId) {
+                        console.error(`[Verify] Service MISMATCH! Employee serviceId: ${JSON.stringify(employeeServiceId)}, User serviceId: ${JSON.stringify(userServiceId)}`);
                         throw new Error('Service mismatch');
                     }
+                    console.log(`[Verify] Service MATCHED successfully!`);
                 }
 
                 return {
@@ -291,11 +294,26 @@ const searchLocalStorage = async (identifier: string): Promise<Employee> => {
                 bvn
             };
 
+            // Also check service mismatch for adhock staff in offline mode
+            const currentUser = useAuthStore.getState().user;
+            if (currentUser?.role === 'adhock') {
+                const employeeServiceId = String(employee.serviceId || '').trim();
+                const userServiceId = String(currentUser.service_id || '').trim();
+
+                console.log(`[Verify] Offline Check - Service Match: Employee(${JSON.stringify(employeeServiceId)}) vs User(${JSON.stringify(userServiceId)})`);
+
+                if (employeeServiceId !== userServiceId) {
+                    console.error(`[Verify] Offline Service MISMATCH! Employee serviceId: ${JSON.stringify(employeeServiceId)}, User serviceId: ${JSON.stringify(userServiceId)}`);
+                    throw new Error('Service mismatch');
+                }
+                console.log(`[Verify] Offline Service MATCHED successfully!`);
+            }
+
             return employee;
         }
         throw new Error('Employee not found in local storage');
     } catch (dbError: any) {
          console.error('[Verify] Local storage search failed:', dbError.message);
-         throw new Error('Employee not found (Offline)');
+         throw dbError; // Re-throw the original error (including Service mismatch)
     }
 };

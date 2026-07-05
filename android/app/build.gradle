@@ -41,15 +41,19 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    ndkVersion "27.1.12297006"
-    buildToolsVersion "34.0.0"
-    compileSdk 34
+    namespace "com.okpanz.smartappsv2"
+
+    ndkVersion rootProject.ext.ndkVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    // Remove buildToolsVersion completely.
+    // AGP chooses the correct version automatically.
 
     namespace 'com.okpanz.smartappsv2'
     defaultConfig {
-        applicationId 'com.okpanz.smartappsv2'
-        minSdkVersion 24
-        targetSdkVersion 34
+        applicationId "com.okpanz.smartappsv2"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.1.4"
         ndk {

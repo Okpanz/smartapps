@@ -89,14 +89,16 @@ export default function SaveScreen() {
         nin: nin || (employee as any).nin,
         bvn: bvn || (employee as any).bvn
       } : undefined;
-      const result = await submitEnrollment({
+      const payload = {
         employeeId: employee.id,
         employeeInfo: employeeInfoToSend,
         images,
         fingerprints,
         documents: documents.map(doc => ({ uri: doc.uri, type: doc.type })),
         serviceId: employee.serviceId,
-      });
+      };
+      console.log('[SaveScreen] Submission Payload:', payload);
+      const result = await submitEnrollment(payload);
 
       showAlert(
         'Enrollment Saved',
